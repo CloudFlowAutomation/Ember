@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self'; connect-src http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* https: wss:; img-src 'self' data:;" />
+  <title>CommSecure – Community Secure Chat</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Connect screen -->
+  <div id="connect-screen" class="connect-screen">
+    <div class="connect-card">
+      <div class="brand">
+        <div class="brand-mark">🛡</div>
+        <h1>CommSecure</h1>
+        <p class="subtitle">Community Secure Chat</p>
+      </div>
+      <form id="connect-form">
+        <label for="username">Username</label>
+        <input id="username" autocomplete="off" maxlength="32" placeholder="Your name" required />
+        <div class="mode-toggle" role="tablist">
+          <button type="button" id="mode-direct" class="mode-btn active">Shared server</button>
+          <button type="button" id="mode-room" class="mode-btn">Private room</button>
+        </div>
+        <div id="direct-fields">
+          <label for="server-url">Server</label>
+          <input id="server-url" autocomplete="off" value="http://localhost:8000" />
+        </div>
+        <div id="room-fields" class="hidden">
+          <label for="join-code">Join code</label>
+          <input id="join-code" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" />
+          <div class="room-create-row">
+            <input id="room-duration" type="number" min="5" max="480" value="60" title="Room duration in minutes" />
+            <span class="room-create-unit">min</span>
+            <button type="button" id="create-room-btn" class="btn-outline">Create room</button>
+          </div>
+          <p id="room-info" class="room-info hidden"></p>
+        </div>
+        <button type="submit" class="btn-primary">Connect securely</button>
+      </form>
+      <button type="button" id="settings-toggle" class="settings-toggle">⚙ Settings</button>
+      <div id="settings-panel" class="settings-panel hidden">
+        <label for="lobby-url-setting">Rooms API URL</label>
+        <input id="lobby-url-setting" autocomplete="off" placeholder="http://localhost:8100" />
+        <p class="settings-hint">Where private rooms are created and joined.
+        Leave blank to use the default. Non-local URLs must be HTTPS.</p>
+      </div>
+      <p class="connect-note">A fresh ephemeral key is generated for every
+      session and signed by your persistent identity key, so peers can detect
+      key substitution. Messages are end-to-end encrypted with per-message
+      forward secrecy — the server only ever relays ciphertext.</p>
+      <p id="connect-error" class="connect-error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Chat screen -->
+  <div id="chat-screen" class="chat-screen hidden">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="brand-mark small">🛡</span>
+        <div>
+          <div class="sidebar-title">CommSecure</div>
+          <div class="sidebar-subtitle">Community Secure Chat</div>
+        </div>
+      </div>
+      <div class="self-card">
+        <div id="self-name" class="self-name"></div>
+        <div class="fingerprint-label">Your identity fingerprint</div>
+        <div id="self-fingerprint" class="fingerprint"></div>
+      </div>
+      <div class="roster-header">Online <span id="roster-count" class="count-chip">0</span></div>
+      <ul id="roster" class="roster"></ul>
+      <button id="disconnect-btn" class="btn-outline">Disconnect</button>
+    </aside>
+    <main class="main">
+      <header class="chat-header">
+        <div class="chat-title">Community room</div>
+        <div class="e2e-badge" title="Ephemeral X25519 keys + per-message hash ratchet">
+          🔒 End-to-end encrypted · Perfect forward secrecy
+        </div>
+      </header>
+      <div id="messages" class="messages"></div>
+      <form id="composer" class="composer">
+        <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
+        <button type="button" id="attach-btn" class="btn-attach" title="Send an encrypted image">📷</button>
+        <input id="message-input" autocomplete="off" placeholder="Send an encrypted message…" />
+        <button type="submit" class="btn-primary">Send</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="../node_modules/tweetnacl/nacl-fast.min.js"></script>
+  <script src="../node_modules/tweetnacl-util/nacl-util.min.js"></script>
+  <script src="../node_modules/socket.io-client/dist/socket.io.min.js"></script>
+  <script src="crypto.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

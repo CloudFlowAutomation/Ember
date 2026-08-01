@@ -1,0 +1,1 @@
+microvm_image_arn = "arn:aws:lambda:us-east-1:542337758827:microvm-image:commsecure-room"

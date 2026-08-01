@@ -1,0 +1,23 @@
+{
+  "name": "commsecure",
+  "productName": "CommSecure",
+  "version": "0.1.0",
+  "description": "CommSecure - Community Secure Chat. End-to-end encrypted group chat with perfect forward secrecy.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/e2e-sim.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "socket.io-client": "^4.8.1",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0"
+  },
+  "allowScripts": {
+    "electron@43.2.0": true
+  }
+}
