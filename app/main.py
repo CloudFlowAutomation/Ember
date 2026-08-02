@@ -16,10 +16,11 @@ join token) is enforced by the MicroVM endpoint itself, upstream of us.
 
 import asyncio
 import json
+import secrets
 import time
 
 import socketio
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 # The buffer must hold one encrypted image copy per recipient in a single
@@ -35,11 +36,12 @@ fastapi_app = FastAPI(title="CommSecure Relay")
 # Socket.IO handles /socket.io/*; everything else falls through to FastAPI
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
-# sid -> {"pubkey": str, "idpk": str, "sig": str, "username": str}
-# pubkey: ephemeral X25519 session key; idpk: persistent Ed25519 identity
-# key; sig: identity signature over the session key. All are opaque to the
-# server — clients verify signatures themselves, so the relay stays
-# untrusted for authenticity as well as confidentiality.
+# sid -> {"pubkey": str, "kempk": str, "idpk": str, "sig": str, "username": str}
+# pubkey: ephemeral X25519 session key; kempk: ephemeral ML-KEM-768 public
+# key (post-quantum hybrid); idpk: persistent Ed25519 identity key; sig:
+# identity signature over both session keys. All are opaque to the server —
+# clients verify signatures themselves, so the relay stays untrusted for
+# authenticity as well as confidentiality.
 peers: dict[str, dict[str, str]] = {}
 
 # ---- Private-room mode (AWS Lambda MicroVMs) ----
@@ -51,6 +53,7 @@ peers: dict[str, dict[str, str]] = {}
 room: dict | None = None  # {"microvm_id", "name", "expires_at", "idle_timeout", "region"}
 last_activity: float = time.time()
 _watchdog: asyncio.Task | None = None
+_closer: asyncio.Task | None = None  # keeps the deferred close alive (loop holds only weak refs)
 
 HOOK_PREFIX = "/aws/lambda-microvms/runtime/v1"
 
@@ -157,10 +160,48 @@ async def hook_run(request: Request) -> dict[str, str]:
         "expires_at": float(config.get("expiresAt", time.time() + 3600)),
         "idle_timeout": int(config.get("idleTimeoutSeconds", 600)),
         "region": config.get("region"),
+        # Shared secret with the lobby; authorizes /room/extend. The room's
+        # members never see it (the lobby only reveals it to this hook).
+        "control_key": str(config.get("controlKey") or ""),
     }
     touch_activity()
     _watchdog = asyncio.get_running_loop().create_task(room_watchdog())
     print(f"room started: {room}")
+    return {"status": "ok"}
+
+
+@fastapi_app.post("/room/extend")
+async def room_extend(request: Request) -> dict:
+    """Push back this room's expiry. Called by the lobby (which has already
+    verified the creator's host key); authenticated with the control key
+    from the run hook so room members can't extend on their own."""
+    if room is None or not room["control_key"]:
+        raise HTTPException(404, "Not a private room")
+    body = await request.json()
+    if not secrets.compare_digest(str(body.get("controlKey") or ""), room["control_key"]):
+        raise HTTPException(403, "Invalid control key")
+    new_expires = float(body.get("expiresAt") or 0)
+    if new_expires <= time.time():
+        raise HTTPException(400, "expiresAt must be in the future")
+    room["expires_at"] = new_expires
+    await sio.emit("room_extended", {"expires_at": new_expires})
+    return {"status": "ok", "expires_at": new_expires}
+
+
+@fastapi_app.post("/room/close")
+async def room_close(request: Request) -> dict:
+    """End this room immediately. Called by the lobby (which has already
+    verified the creator's host key); authenticated with the control key
+    from the run hook so room members can't end the room on their own."""
+    if room is None or not room["control_key"]:
+        raise HTTPException(404, "Not a private room")
+    body = await request.json()
+    if not secrets.compare_digest(str(body.get("controlKey") or ""), room["control_key"]):
+        raise HTTPException(403, "Invalid control key")
+    # Close after replying, or terminating the VM could cut off the 200
+    # the lobby is waiting on.
+    global _closer
+    _closer = asyncio.get_running_loop().create_task(close_room("ended"))
     return {"status": "ok"}
 
 
@@ -183,6 +224,7 @@ async def broadcast_roster() -> None:
         {
             "sid": sid,
             "pubkey": info["pubkey"],
+            "kempk": info["kempk"],
             "idpk": info["idpk"],
             "sig": info["sig"],
             "username": info["username"],
@@ -201,14 +243,19 @@ async def connect(sid: str, environ: dict) -> None:
 async def register(sid: str, data: dict) -> None:
     """Client announces its signed ephemeral session key and username."""
     pubkey = data.get("pubkey")
+    kempk = data.get("kempk")
     idpk = data.get("idpk")
     sig = data.get("sig")
     username = data.get("username") or sid[:8]
     for field in (pubkey, idpk, sig):
         if not isinstance(field, str) or not field or len(field) > 256:
             return
+    # ML-KEM-768 public keys are ~1580 chars of base64.
+    if not isinstance(kempk, str) or not kempk or len(kempk) > 2048:
+        return
     peers[sid] = {
         "pubkey": pubkey,
+        "kempk": kempk,
         "idpk": idpk,
         "sig": sig,
         "username": str(username)[:32],
@@ -237,6 +284,7 @@ async def e2e_message(sid: str, data: dict) -> None:
             {
                 "from": sid,
                 "n": item.get("n"),
+                "kx": item.get("kx"),
                 "nonce": item.get("nonce"),
                 "ct": item.get("ct"),
             },

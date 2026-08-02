@@ -12,6 +12,40 @@ npm install
 npm start
 ```
 
+## Distributing builds ("CommSecure is damaged" fix)
+
+macOS Gatekeeper reports downloaded copies of the app as *"damaged and
+can't be opened"* when the build is not signed with a Developer ID
+certificate and notarized by Apple — the zip itself is fine; macOS
+quarantines unsigned downloads.
+
+The real fix is to sign and notarize releases. `forge.config.js` does both
+automatically when these are set at build/publish time:
+
+```bash
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export APPLE_ID="you@example.com"
+export APPLE_PASSWORD="abcd-efgh-ijkl-mnop"   # app-specific password, NOT your Apple ID password
+export APPLE_TEAM_ID="TEAMID"
+```
+
+`APPLE_PASSWORD` must be an **app-specific password** — Apple's notarization
+service rejects your regular Apple ID password with a 401. To generate one:
+
+1. Sign in at [account.apple.com](https://account.apple.com) with the Apple ID
+   used for the developer account.
+2. Go to **Sign-In and Security → App-Specific Passwords**.
+3. Click **+**, label it (e.g. `commsecure-notarize`), and copy the generated
+   `abcd-efgh-ijkl-mnop` password — it is shown only once, and the dashes are
+   part of it.
+
+This requires an Apple Developer Program membership. Until then, people
+who download an unsigned build can clear the quarantine flag manually:
+
+```bash
+xattr -cr /path/to/CommSecure.app
+```
+
 ## Deploy temporary room infrastructure
 
 Private rooms run **one isolated relay per room**, each in its own AWS
@@ -75,9 +109,21 @@ endpoint plus an auth token that expires with the room — the MicroVM
 endpoint itself rejects connections without it, so the relay stays
 zero-knowledge with no auth code of its own.
 
-Room lifetime: the platform hard-terminates the VM at the chosen duration;
-the in-room watchdog ends rooms with no messages for 10 minutes; rooms with
-no connections at all are suspended by the platform and auto-resume when a
-valid token holder connects. Creating a room also returns a one-time
-`host_key` — `DELETE {lobby}/rooms/{code}` with header `X-Host-Key` closes
-it early.
+Room lifetime: the in-room watchdog enforces the chosen duration (the
+platform hard stop sits at the 8 h cap as a backstop, since MicroVM
+durations can't be lengthened after launch) and ends rooms with no
+messages for 10 minutes; rooms with no connections at all are suspended by
+the platform and auto-resume when a valid token holder connects. Creating
+a room returns a `host_key` (the app keeps it): the creator sees a live
+countdown in the chat header with an **+ Extend** button (up to 8 h total
+lifetime), and `DELETE {lobby}/rooms/{code}` with header `X-Host-Key`
+closes the room early. Unchecking **Allow extending the room later** at
+creation locks the duration in: the button never appears and the lobby
+rejects extend requests for that room.
+
+After pulling these changes, rebuild the room image (step 2) and restart
+the shared relay — the roster now carries each client's ML-KEM-768 public
+key and messages carry its encapsulation, which older servers drop
+(clients then show peers as unauthenticated).
+
+PATH="/opt/homebrew/opt/node@24/bin:$PATH" npm run publish

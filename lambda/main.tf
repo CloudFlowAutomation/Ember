@@ -175,7 +175,9 @@ resource "aws_lambda_function" "lobby" {
   handler          = "lobby_lambda.lambda_handler"
   filename         = data.archive_file.lobby.output_path
   source_code_hash = data.archive_file.lobby.output_base64sha256
-  timeout          = 30
+  # /rooms/{code}/extend calls into the room VM, which may need to
+  # auto-resume from suspension first.
+  timeout          = 60
   memory_size      = 256
 
   environment {

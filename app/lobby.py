@@ -28,6 +28,8 @@ import math
 import os
 import secrets
 import time
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -130,10 +132,15 @@ app.add_middleware(
 class CreateRoom(BaseModel):
     duration_minutes: int = Field(ge=MIN_MINUTES, le=MAX_MINUTES)
     name: str = Field(default="Private room", min_length=1, max_length=64)
+    allow_extend: bool = True
 
 
 class JoinRoom(BaseModel):
     code: str = Field(min_length=1, max_length=16)
+
+
+class ExtendRoom(BaseModel):
+    additional_minutes: int = Field(ge=5, le=MAX_MINUTES)
 
 
 @app.get("/health")
@@ -147,10 +154,17 @@ def create_room(req: CreateRoom) -> dict:
     if not IMAGE_ARN:
         raise HTTPException(503, "Lobby is not configured: set MICROVM_IMAGE_ARN")
 
-    expires_at = time.time() + req.duration_minutes * 60
+    created_at = time.time()
+    expires_at = created_at + req.duration_minutes * 60
+    control_key = secrets.token_urlsafe(24)
     kwargs = {
         "imageIdentifier": IMAGE_ARN,
-        "maximumDurationInSeconds": req.duration_minutes * 60,
+        # The platform offers no way to lengthen a running VM's duration
+        # (there is no UpdateMicrovm), so the hard stop is set to the 8 h
+        # platform cap purely as a backstop and the *chosen* expiry is
+        # enforced by the relay's watchdog plus our reaper — which is what
+        # makes /rooms/{code}/extend possible.
+        "maximumDurationInSeconds": MAX_MINUTES * 60,
         "ingressNetworkConnectors": [INGRESS_ARN],
         "egressNetworkConnectors": [EGRESS_ARN],
         # Suspends *empty* rooms (connected clients heartbeat, which counts
@@ -168,6 +182,9 @@ def create_room(req: CreateRoom) -> dict:
                 "expiresAt": expires_at,
                 "idleTimeoutSeconds": ROOM_IDLE_SECONDS,
                 "region": REGION,
+                # Authorizes lobby -> relay /room/extend calls; never
+                # revealed to room members.
+                "controlKey": control_key,
             }
         ),
     }
@@ -184,8 +201,11 @@ def create_room(req: CreateRoom) -> dict:
         "microvm_id": resp["microvmId"],
         "endpoint": resp["endpoint"],
         "name": req.name,
+        "created_at": created_at,
         "expires_at": expires_at,
-        # Returned once to the creator; lets them close the room early.
+        "control_key": control_key,
+        "allow_extend": req.allow_extend,
+        # Returned once to the creator; lets them close or extend the room.
         "host_key": secrets.token_urlsafe(24),
     }
     return {
@@ -195,6 +215,7 @@ def create_room(req: CreateRoom) -> dict:
         "microvm_id": resp["microvmId"],
         "state": resp.get("state", "PENDING"),
         "expires_at": iso(expires_at),
+        "allow_extend": req.allow_extend,
     }
 
 
@@ -220,6 +241,18 @@ def room_status(code: str) -> dict:
     return {"name": info["name"], "state": state, "expires_at": iso(info["expires_at"])}
 
 
+def _mint_token(microvm_id: str, minutes: int) -> str:
+    resp = mvm().create_microvm_auth_token(
+        microvmIdentifier=microvm_id,
+        expirationInMinutes=minutes,
+        allowedPorts=[{"port": ROOM_PORT}],
+    )
+    token = resp["authToken"]
+    if isinstance(token, dict):  # docs show {"X-aws-proxy-auth": "<JWE>"}
+        token = token.get("X-aws-proxy-auth") or next(iter(token.values()))
+    return token
+
+
 @app.post("/rooms/join")
 def join_room(req: JoinRoom) -> dict:
     """Exchange a join code for the room's endpoint and an auth token
@@ -227,28 +260,76 @@ def join_room(req: JoinRoom) -> dict:
     key, info = _lookup(req.code)
     remaining_minutes = max(1, math.ceil((info["expires_at"] - time.time()) / 60))
     try:
-        resp = mvm().create_microvm_auth_token(
-            microvmIdentifier=info["microvm_id"],
-            expirationInMinutes=remaining_minutes,
-            allowedPorts=[{"port": ROOM_PORT}],
-        )
+        token = _mint_token(info["microvm_id"], remaining_minutes)
         state = mvm().get_microvm(microvmIdentifier=info["microvm_id"]).get("state")
     except ClientError as e:
         raise aws_error(e) from e
 
-    token = resp["authToken"]
-    if isinstance(token, dict):  # docs show {"X-aws-proxy-auth": "<JWE>"}
-        token = token.get("X-aws-proxy-auth") or next(iter(token.values()))
     return {
         "url": f"https://{info['endpoint']}",
         "token": token,
         "state": state,
         "name": info["name"],
         "expires_at": iso(info["expires_at"]),
+        "allow_extend": info.get("allow_extend", True),
         # Browser WebSocket clients can't set headers; the endpoint
         # accepts the token via these subprotocols instead.
         "subprotocols": ["lambda-microvms", f"lambda-microvms.authentication.{token}"],
     }
+
+
+@app.post("/rooms/{code}/extend")
+def extend_room(code: str, req: ExtendRoom, x_host_key: str = Header(default="")) -> dict:
+    """Push back a room's expiry — creator only (X-Host-Key). Capped at
+    8 h total lifetime because that is the platform's hard stop."""
+    key, info = _lookup(code)
+    if not secrets.compare_digest(x_host_key, info["host_key"]):
+        raise HTTPException(403, "Invalid host key")
+    if not info.get("allow_extend", True):
+        raise HTTPException(403, "This room was created with extensions disabled")
+
+    hard_stop = info["created_at"] + MAX_MINUTES * 60
+    new_expires = info["expires_at"] + req.additional_minutes * 60
+    if new_expires > hard_stop:
+        spare = int((hard_stop - info["expires_at"]) // 60)
+        raise HTTPException(
+            409,
+            f"Rooms cannot live past {MAX_MINUTES // 60} h total; "
+            + (f"this one can be extended by at most {spare} more minutes." if spare >= 1
+               else "this room cannot be extended any further."),
+        )
+
+    # The relay's watchdog enforces the real expiry, so it must accept the
+    # new deadline before the registry does. Reaching its endpoint needs a
+    # platform token (which also auto-resumes a suspended room).
+    try:
+        token = _mint_token(info["microvm_id"], 5)
+    except ClientError as e:
+        raise aws_error(e) from e
+    call = urllib.request.Request(
+        f"https://{info['endpoint']}/room/extend",
+        data=json.dumps({"controlKey": info["control_key"], "expiresAt": new_expires}).encode(),
+        headers={"Content-Type": "application/json", "X-aws-proxy-auth": token},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(call, timeout=30):
+            pass
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # The room's VM snapshot predates /room/extend (image rebuilt
+            # since, or never rebuilt). Only a new room picks up new code.
+            raise HTTPException(
+                502,
+                "This room is running an older build that cannot be extended; "
+                "create a new room to get an extendable one.",
+            ) from e
+        raise HTTPException(502, f"Could not reach the room to extend it: {e}") from e
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise HTTPException(502, f"Could not reach the room to extend it: {e}") from e
+
+    info["expires_at"] = new_expires
+    return {"name": info["name"], "expires_at": iso(new_expires)}
 
 
 @app.delete("/rooms/{code}", status_code=204)
@@ -257,8 +338,24 @@ def close_room(code: str, x_host_key: str = Header(default="")) -> None:
     key, info = _lookup(code)
     if not secrets.compare_digest(x_host_key, info["host_key"]):
         raise HTTPException(403, "Invalid host key")
+    # Best-effort heads-up via the relay so members see "the host ended the
+    # room" instead of a bare disconnect; rooms on an older image 404 here.
+    try:
+        token = _mint_token(info["microvm_id"], 5)
+        call = urllib.request.Request(
+            f"https://{info['endpoint']}/room/close",
+            data=json.dumps({"controlKey": info["control_key"]}).encode(),
+            headers={"Content-Type": "application/json", "X-aws-proxy-auth": token},
+            method="POST",
+        )
+        with urllib.request.urlopen(call, timeout=15):
+            pass
+    except (ClientError, urllib.error.URLError, TimeoutError):
+        pass
+    # The notified relay terminates its own VM; this covers rooms that
+    # could not be reached, and is a no-op if the VM is already going down.
     try:
         mvm().terminate_microvm(microvmIdentifier=info["microvm_id"])
-    except ClientError as e:
-        raise aws_error(e) from e
+    except ClientError:
+        pass
     rooms.pop(key, None)

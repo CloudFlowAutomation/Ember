@@ -12,7 +12,20 @@
   <div id="connect-screen" class="connect-screen">
     <div class="connect-card">
       <div class="brand">
-        <div class="brand-mark">🛡</div>
+        <div class="brand-mark">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-linecap="round">
+              <circle cx="50" cy="50" r="43" stroke-width="7"/>
+              <circle cx="50" cy="50" r="25" stroke-width="6"/>
+              <line x1="50" y1="25" x2="50" y2="75" stroke-width="6"/>
+              <line x1="25" y1="50" x2="75" y2="50" stroke-width="6"/>
+              <line x1="32.3" y1="32.3" x2="67.7" y2="67.7" stroke-width="6"/>
+              <line x1="67.7" y1="32.3" x2="32.3" y2="67.7" stroke-width="6"/>
+            </g>
+            <circle cx="50" cy="50" r="11" fill="currentColor"/>
+            <circle cx="50" cy="50" r="5" fill="var(--primary)"/>
+          </svg>
+        </div>
         <h1>CommSecure</h1>
         <p class="subtitle">Community Secure Chat</p>
       </div>
@@ -23,10 +36,6 @@
           <button type="button" id="mode-direct" class="mode-btn active">Shared server</button>
           <button type="button" id="mode-room" class="mode-btn">Private room</button>
         </div>
-        <div id="direct-fields">
-          <label for="server-url">Server</label>
-          <input id="server-url" autocomplete="off" value="http://localhost:8000" />
-        </div>
         <div id="room-fields" class="hidden">
           <label for="join-code">Join code</label>
           <input id="join-code" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" />
@@ -35,21 +44,28 @@
             <span class="room-create-unit">min</span>
             <button type="button" id="create-room-btn" class="btn-outline">Create room</button>
           </div>
+          <label class="room-extend-opt"><input type="checkbox" id="room-allow-extend" checked />
+            Allow extending the room later</label>
           <p id="room-info" class="room-info hidden"></p>
         </div>
         <button type="submit" class="btn-primary">Connect securely</button>
       </form>
       <button type="button" id="settings-toggle" class="settings-toggle">⚙ Settings</button>
       <div id="settings-panel" class="settings-panel hidden">
+        <label for="server-url-setting">Server URL</label>
+        <input id="server-url-setting" autocomplete="off" placeholder="http://localhost:8000" />
+        <p class="settings-hint">The chat server used by "Shared server" mode.
+        Leave blank to use the default.</p>
         <label for="lobby-url-setting">Rooms API URL</label>
         <input id="lobby-url-setting" autocomplete="off" placeholder="http://localhost:8100" />
         <p class="settings-hint">Where private rooms are created and joined.
         Leave blank to use the default. Non-local URLs must be HTTPS.</p>
       </div>
-      <p class="connect-note">A fresh ephemeral key is generated for every
-      session and signed by your persistent identity key, so peers can detect
-      key substitution. Messages are end-to-end encrypted with per-message
-      forward secrecy — the server only ever relays ciphertext.</p>
+      <p class="connect-note">Fresh ephemeral keys are generated for every
+      session — X25519 plus ML-KEM-768, a quantum-resistant hybrid as in
+      Signal's PQXDH — and signed by your persistent identity key, so peers
+      can detect key substitution. Messages are end-to-end encrypted with
+      per-message forward secrecy — the server only ever relays ciphertext.</p>
       <p id="connect-error" class="connect-error hidden"></p>
     </div>
   </div>
@@ -58,7 +74,20 @@
   <div id="chat-screen" class="chat-screen hidden">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <span class="brand-mark small">🛡</span>
+        <span class="brand-mark small">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-linecap="round">
+              <circle cx="50" cy="50" r="43" stroke-width="7"/>
+              <circle cx="50" cy="50" r="25" stroke-width="6"/>
+              <line x1="50" y1="25" x2="50" y2="75" stroke-width="6"/>
+              <line x1="25" y1="50" x2="75" y2="50" stroke-width="6"/>
+              <line x1="32.3" y1="32.3" x2="67.7" y2="67.7" stroke-width="6"/>
+              <line x1="67.7" y1="32.3" x2="32.3" y2="67.7" stroke-width="6"/>
+            </g>
+            <circle cx="50" cy="50" r="11" fill="currentColor"/>
+            <circle cx="50" cy="50" r="5" fill="var(--primary)"/>
+          </svg>
+        </span>
         <div>
           <div class="sidebar-title">CommSecure</div>
           <div class="sidebar-subtitle">Community Secure Chat</div>
@@ -75,15 +104,33 @@
     </aside>
     <main class="main">
       <header class="chat-header">
-        <div class="chat-title">Community room</div>
-        <div class="e2e-badge" title="Ephemeral X25519 keys + per-message hash ratchet">
-          🔒 End-to-end encrypted · Perfect forward secrecy
+        <div class="chat-header-left">
+          <div id="chat-title" class="chat-title">Community room</div>
+          <div id="room-timer" class="room-timer hidden">
+            <span id="room-timer-text"></span>
+            <button type="button" id="extend-btn" class="btn-extend hidden">+ Extend</button>
+            <div id="extend-menu" class="extend-menu hidden">
+              <button type="button" data-minutes="5">+5 minutes</button>
+              <button type="button" data-minutes="10">+10 minutes</button>
+              <button type="button" data-minutes="15">+15 minutes</button>
+              <button type="button" data-minutes="30">+30 minutes</button>
+              <button type="button" data-minutes="60">+1 hour</button>
+            </div>
+            <button type="button" id="end-room-btn" class="btn-end-room hidden">End room</button>
+          </div>
+        </div>
+        <div class="e2e-badge" title="Ephemeral X25519 + ML-KEM-768 hybrid keys + per-message hash ratchet">
+          🔒 End-to-end encrypted · Post-quantum · Forward secrecy
         </div>
       </header>
       <div id="messages" class="messages"></div>
+      <div id="dm-indicator" class="dm-indicator hidden">
+        <span class="dm-indicator-text">🔒 Private message to <strong id="dm-name"></strong> — only they will receive it</span>
+        <button type="button" id="dm-clear" class="dm-clear" title="Back to everyone">✕</button>
+      </div>
       <form id="composer" class="composer">
-        <input id="image-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
-        <button type="button" id="attach-btn" class="btn-attach" title="Send an encrypted image">📷</button>
+        <input id="image-input" type="file" class="hidden" />
+        <button type="button" id="attach-btn" class="btn-attach" title="Send an encrypted image or file">📎</button>
         <input id="message-input" autocomplete="off" placeholder="Send an encrypted message…" />
         <button type="submit" class="btn-primary">Send</button>
       </form>
@@ -93,6 +140,7 @@
   <script src="../node_modules/tweetnacl/nacl-fast.min.js"></script>
   <script src="../node_modules/tweetnacl-util/nacl-util.min.js"></script>
   <script src="../node_modules/socket.io-client/dist/socket.io.min.js"></script>
+  <script src="vendor/mlkem.js"></script>
   <script src="crypto.js"></script>
   <script src="app.js"></script>
 </body>

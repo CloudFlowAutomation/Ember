@@ -1,23 +1,33 @@
 {
   "name": "commsecure",
   "productName": "CommSecure",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "CommSecure - Community Secure Chat. End-to-end encrypted group chat with perfect forward secrecy.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/e2e-sim.js"
+    "test": "node test/e2e-sim.js",
+    "make": "electron-forge make --arch=universal",
+    "publish": "electron-forge publish --arch=universal",
+    "bundle:mlkem": "npx --yes esbuild@0.25.5 --bundle --format=iife --global-name=MlKemBundle --minify --outfile=renderer/vendor/mlkem.js node_modules/mlkem/esm/mod.js"
   },
   "license": "MIT",
   "dependencies": {
+    "mlkem": "^2.7.0",
     "socket.io-client": "^4.8.1",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/publisher-github": "^7.11.2",
     "electron": "^43.2.0"
   },
   "allowScripts": {
     "electron@43.2.0": true
+  },
+  "overrides": {
+    "tar": "^7.5.22"
   }
 }

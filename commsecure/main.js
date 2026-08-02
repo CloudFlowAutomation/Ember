@@ -49,6 +49,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Packaged builds get the icon from the bundle; `npm start` runs the stock
+  // Electron binary, so the Dock icon has to be set at runtime.
+  if (process.platform === 'darwin' && app.dock && !app.isPackaged) {
+    app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

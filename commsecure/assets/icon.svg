@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- CommSecure app icon: bank-vault door on the brand blue -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+  </defs>
+
+  <!-- macOS-style rounded square with margin -->
+  <rect x="76" y="76" width="872" height="872" rx="196" fill="url(#bg)"/>
+
+  <!-- recessed door frame -->
+  <circle cx="512" cy="512" r="382" fill="#1e3a8a" opacity="0.55"/>
+  <circle cx="512" cy="512" r="382" fill="none" stroke="#bfdbfe" stroke-width="12" opacity="0.6"/>
+
+  <!-- frame bolts -->
+  <g fill="#dbeafe">
+    <circle cx="512" cy="170" r="21"/>
+    <circle cx="512" cy="854" r="21"/>
+    <circle cx="170" cy="512" r="21"/>
+    <circle cx="854" cy="512" r="21"/>
+    <circle cx="270.2" cy="270.2" r="21"/>
+    <circle cx="753.8" cy="270.2" r="21"/>
+    <circle cx="270.2" cy="753.8" r="21"/>
+    <circle cx="753.8" cy="753.8" r="21"/>
+  </g>
+
+  <!-- vault door -->
+  <circle cx="512" cy="512" r="300" fill="none" stroke="#ffffff" stroke-width="46"/>
+
+  <!-- handle wheel -->
+  <g stroke="#ffffff" stroke-width="40" stroke-linecap="round">
+    <circle cx="512" cy="512" r="180" fill="none"/>
+    <line x1="512" y1="332" x2="512" y2="692"/>
+    <line x1="332" y1="512" x2="692" y2="512"/>
+    <line x1="384.7" y1="384.7" x2="639.3" y2="639.3"/>
+    <line x1="639.3" y1="384.7" x2="384.7" y2="639.3"/>
+  </g>
+  <circle cx="512" cy="512" r="70" fill="#ffffff"/>
+  <circle cx="512" cy="512" r="32" fill="#1e40af"/>
+</svg>
