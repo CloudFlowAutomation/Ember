@@ -1,14 +1,20 @@
 {
   "name": "commsecure",
   "productName": "CommSecure",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "CommSecure - Community Secure Chat. End-to-end encrypted group chat with perfect forward secrecy.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "test": "node test/e2e-sim.js",
-    "make": "electron-forge make --arch=universal",
-    "publish": "electron-forge publish --arch=universal",
+    "make": "electron-forge make --platform=darwin --arch=universal",
+    "make:win": "electron-forge make --platform=win32 --arch=x64",
+    "make:linux": "electron-forge make --platform=linux --arch=x64",
+    "make:all": "npm run make && npm run make:win && npm run make:linux",
+    "publish": "electron-forge publish --platform=darwin --arch=universal",
+    "publish:win": "electron-forge publish --platform=win32 --arch=x64",
+    "publish:linux": "electron-forge publish --platform=linux --arch=x64",
+    "publish:all": "npm run publish && npm run publish:win && npm run publish:linux",
     "bundle:mlkem": "npx --yes esbuild@0.25.5 --bundle --format=iife --global-name=MlKemBundle --minify --outfile=renderer/vendor/mlkem.js node_modules/mlkem/esm/mod.js"
   },
   "license": "MIT",
@@ -20,12 +26,15 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
     "@electron-forge/publisher-github": "^7.11.2",
     "electron": "^43.2.0"
   },
   "allowScripts": {
-    "electron@43.2.0": true
+    "electron@43.2.0": true,
+    "electron-winstaller@5.4.4": true
   },
   "overrides": {
     "tar": "^7.5.22"

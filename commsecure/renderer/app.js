@@ -31,7 +31,8 @@
   const connectError = document.getElementById('connect-error');
   const usernameInput = document.getElementById('username');
   const settingsToggleBtn = document.getElementById('settings-toggle');
-  const settingsPanel = document.getElementById('settings-panel');
+  const settingsModal = document.getElementById('settings-modal');
+  const settingsCloseBtn = document.getElementById('settings-close');
   const serverUrlSetting = document.getElementById('server-url-setting');
   const lobbyUrlSetting = document.getElementById('lobby-url-setting');
   const modeDirectBtn = document.getElementById('mode-direct');
@@ -42,6 +43,19 @@
   const roomAllowExtendInput = document.getElementById('room-allow-extend');
   const createRoomBtn = document.getElementById('create-room-btn');
   const roomInfoEl = document.getElementById('room-info');
+  const backToServerBtn = document.getElementById('back-to-server-btn');
+  const switchRoomBtn = document.getElementById('switch-room-btn');
+  const switchRoomModal = document.getElementById('switch-room-modal');
+  const switchRoomCloseBtn = document.getElementById('switch-room-close');
+  const switchRoomForm = document.getElementById('switch-room-form');
+  const switchModeDirectBtn = document.getElementById('switch-mode-direct');
+  const switchModeRoomBtn = document.getElementById('switch-mode-room');
+  const switchRoomFieldsEl = document.getElementById('switch-room-fields');
+  const switchJoinCodeInput = document.getElementById('switch-join-code');
+  const switchRoomDurationInput = document.getElementById('switch-room-duration');
+  const switchRoomAllowExtendInput = document.getElementById('switch-room-allow-extend');
+  const switchCreateRoomBtn = document.getElementById('switch-create-room-btn');
+  const switchRoomInfoEl = document.getElementById('switch-room-info');
   const selfNameEl = document.getElementById('self-name');
   const selfFingerprintEl = document.getElementById('self-fingerprint');
   const rosterEl = document.getElementById('roster');
@@ -375,7 +389,11 @@
     renderRoster();
   }
 
-  function teardown() {
+  // Tears down the live connection (socket, session, roster, message state)
+  // without touching which screen is visible — used both by a full logout
+  // and by an in-place room switch, which immediately opens a new
+  // connection afterwards instead of returning to the connect screen.
+  function resetConnectionState() {
     if (socket) {
       socket.removeAllListeners();
       socket.disconnect();
@@ -388,11 +406,16 @@
     peers.clear();
     messageIndex.clear();
     dmSentTargets.clear();
-    setDmTarget(null);
+    dmTarget = null;
+    dmIndicator.classList.add('hidden');
     stopRoomTimer();
     roomMeta = null;
     messagesEl.textContent = '';
     rosterEl.textContent = '';
+  }
+
+  function teardown() {
+    resetConnectionState();
     chatScreen.classList.add('hidden');
     connectScreen.classList.remove('hidden');
   }
@@ -429,7 +452,25 @@
   }
 
   settingsToggleBtn.addEventListener('click', () => {
-    settingsPanel.classList.toggle('hidden');
+    settingsModal.classList.remove('hidden');
+    serverUrlSetting.focus();
+  });
+
+  settingsCloseBtn.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+  });
+
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) settingsModal.classList.add('hidden');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsModal.classList.contains('hidden')) {
+      settingsModal.classList.add('hidden');
+    }
+    if (e.key === 'Escape' && !switchRoomModal.classList.contains('hidden')) {
+      closeSwitchRoomModal();
+    }
   });
 
   serverUrlSetting.value = loadSettings().serverUrl || '';
@@ -551,13 +592,15 @@
     return payload;
   }
 
-  createRoomBtn.addEventListener('click', async () => {
-    const minutes = parseInt(roomDurationInput.value, 10);
+  // Shared by both the initial connect form and the switch-room modal, so
+  // creating a room works identically from either place.
+  async function createRoom({ durationInput, allowExtendInput, joinCodeInputEl, report, button }) {
+    const minutes = parseInt(durationInput.value, 10);
     if (!minutes) return;
-    createRoomBtn.disabled = true;
-    setRoomInfo('Creating room…');
+    button.disabled = true;
+    report('Creating room…');
     try {
-      const allowExtend = roomAllowExtendInput.checked;
+      const allowExtend = allowExtendInput.checked;
       const room = await lobbyFetch(lobbyUrl(), '/rooms', {
         duration_minutes: minutes,
         allow_extend: allowExtend,
@@ -565,8 +608,8 @@
       // Keeping the host key marks us as this room's creator: it unlocks
       // the Extend control in the chat header.
       saveHostKey(room.join_code, room.host_key);
-      joinCodeInput.value = room.join_code;
-      setRoomInfo(
+      joinCodeInputEl.value = room.join_code;
+      report(
         'Room created — share code ' + room.join_code +
         '. It expires at ' + new Date(room.expires_at).toLocaleTimeString() +
         ' and closes early after 10 minutes without messages.' +
@@ -575,28 +618,74 @@
           : ' It cannot be extended.')
       );
     } catch (err) {
-      setRoomInfo('Could not create room: ' + err.message);
+      report('Could not create room: ' + err.message);
     } finally {
-      createRoomBtn.disabled = false;
+      button.disabled = false;
     }
-  });
+  }
+
+  createRoomBtn.addEventListener('click', () => createRoom({
+    durationInput: roomDurationInput,
+    allowExtendInput: roomAllowExtendInput,
+    joinCodeInputEl: joinCodeInput,
+    report: setRoomInfo,
+    button: createRoomBtn,
+  }));
+
+  switchCreateRoomBtn.addEventListener('click', () => createRoom({
+    durationInput: switchRoomDurationInput,
+    allowExtendInput: switchRoomAllowExtendInput,
+    joinCodeInputEl: switchJoinCodeInput,
+    report: setSwitchRoomInfo,
+    button: switchCreateRoomBtn,
+  }));
 
   // Exchange a join code for the room's endpoint URL and a platform auth
-  // token that expires with the room; wait out the VM's cold start.
-  async function joinPrivateRoom(lobby, code) {
-    setRoomInfo('Looking up room…');
+  // token that expires with the room; wait out the VM's cold start. `report`
+  // routes progress text to whichever info line is visible (connect screen
+  // vs. the switch-room modal).
+  async function joinPrivateRoom(lobby, code, report) {
+    report('Looking up room…');
     const join = await lobbyFetch(lobby, '/rooms/join', { code });
     let state = join.state;
     const deadline = Date.now() + 90000;
     while (state === 'PENDING' && Date.now() < deadline) {
-      setRoomInfo('Room is starting…');
+      report('Room is starting…');
       await sleep(2000);
       const status = await lobbyFetch(lobby, '/rooms/' + encodeURIComponent(code.replace(/[^A-Za-z0-9]/g, '')));
       state = status.state;
     }
     if (state === 'PENDING') throw new Error('The room did not start in time. Try again.');
-    setRoomInfo('Joining "' + join.name + '" — room expires at ' + new Date(join.expires_at).toLocaleTimeString());
+    report('Joining "' + join.name + '" — room expires at ' + new Date(join.expires_at).toLocaleTimeString());
     return join;
+  }
+
+  // Resolves the target first (for a room, that means confirming the join
+  // code works before giving up the current connection), then tears down
+  // whatever is currently connected and opens the new one. Used for the
+  // initial connect AND for switching rooms without a full logout — in the
+  // latter case `resetConnectionState` just has a live connection to drop.
+  async function beginConnection(kind, code, report) {
+    if (kind === 'direct') {
+      resetConnectionState();
+      roomMeta = null;
+      openSocket(serverUrl(), {});
+      return;
+    }
+    const join = await joinPrivateRoom(lobbyUrl(), code, report);
+    resetConnectionState();
+    roomMeta = {
+      code: normCode(code),
+      name: join.name,
+      expiresAt: Date.parse(join.expires_at),
+      hostKey: hostKeyFor(code),
+      // Older lobbies don't send allow_extend; treat missing as allowed.
+      allowExtend: join.allow_extend !== false,
+    };
+    // The MicroVM endpoint authenticates the WebSocket via these
+    // subprotocols (browser sockets can't set headers); Lambda strips
+    // them before the request reaches the relay.
+    openSocket(join.url, { protocols: join.subprotocols });
   }
 
   connectForm.addEventListener('submit', async (e) => {
@@ -607,8 +696,11 @@
     if (!username) return;
 
     if (mode === 'direct') {
-      roomMeta = null;
-      openSocket(serverUrl(), {});
+      try {
+        await beginConnection('direct');
+      } catch (err) {
+        showError(err.message);
+      }
       return;
     }
 
@@ -619,23 +711,97 @@
     }
     connectButton.disabled = true;
     try {
-      const join = await joinPrivateRoom(lobbyUrl(), code);
-      roomMeta = {
-        code: normCode(code),
-        name: join.name,
-        expiresAt: Date.parse(join.expires_at),
-        hostKey: hostKeyFor(code),
-        // Older lobbies don't send allow_extend; treat missing as allowed.
-        allowExtend: join.allow_extend !== false,
-      };
-      // The MicroVM endpoint authenticates the WebSocket via these
-      // subprotocols (browser sockets can't set headers); Lambda strips
-      // them before the request reaches the relay.
-      openSocket(join.url, { protocols: join.subprotocols });
+      await beginConnection('room', code, setRoomInfo);
     } catch (err) {
       showError(err.message);
     } finally {
       connectButton.disabled = false;
+    }
+  });
+
+  // ---- Switch room (from inside the chat screen, no logout needed) ----
+
+  let switchMode = 'direct';
+
+  function setSwitchMode(next) {
+    switchMode = next;
+    switchModeDirectBtn.classList.toggle('active', next === 'direct');
+    switchModeRoomBtn.classList.toggle('active', next === 'room');
+    switchRoomFieldsEl.classList.toggle('hidden', next !== 'room');
+  }
+
+  switchModeDirectBtn.addEventListener('click', () => setSwitchMode('direct'));
+  switchModeRoomBtn.addEventListener('click', () => setSwitchMode('room'));
+
+  function setSwitchRoomInfo(text) {
+    switchRoomInfoEl.textContent = text;
+    switchRoomInfoEl.classList.toggle('hidden', !text);
+  }
+
+  function openSwitchRoomModal() {
+    setSwitchMode('direct');
+    switchJoinCodeInput.value = '';
+    setSwitchRoomInfo('');
+    switchRoomModal.classList.remove('hidden');
+  }
+
+  function closeSwitchRoomModal() {
+    switchRoomModal.classList.add('hidden');
+  }
+
+  switchRoomBtn.addEventListener('click', openSwitchRoomModal);
+  switchRoomCloseBtn.addEventListener('click', closeSwitchRoomModal);
+  switchRoomModal.addEventListener('click', (e) => {
+    if (e.target === switchRoomModal) closeSwitchRoomModal();
+  });
+
+  // Jumps straight back to the shared server without opening the modal —
+  // the common case of "I'm in a private room, take me back to the main
+  // server" shouldn't need the mode toggle at all. Only shown while a
+  // private room is active (see openSocket).
+  async function backToSharedServer() {
+    if (!identity || !socket) return;
+    backToServerBtn.disabled = true;
+    try {
+      await beginConnection('direct');
+    } catch (err) {
+      addMessage({ system: true, warning: true, text: 'Could not switch back to the shared server: ' + err.message });
+    } finally {
+      backToServerBtn.disabled = false;
+    }
+  }
+
+  backToServerBtn.addEventListener('click', backToSharedServer);
+
+  switchRoomForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!identity || !socket) return;
+    const submitBtn = switchRoomForm.querySelector('button[type="submit"]');
+    if (switchMode === 'direct') {
+      submitBtn.disabled = true;
+      try {
+        await beginConnection('direct');
+        closeSwitchRoomModal();
+      } catch (err) {
+        setSwitchRoomInfo('Could not connect: ' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+      return;
+    }
+    const code = switchJoinCodeInput.value.trim();
+    if (!code) {
+      setSwitchRoomInfo('Enter a join code, or create a room first.');
+      return;
+    }
+    submitBtn.disabled = true;
+    try {
+      await beginConnection('room', code, setSwitchRoomInfo);
+      closeSwitchRoomModal();
+    } catch (err) {
+      setSwitchRoomInfo(err.message);
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 
@@ -666,6 +832,7 @@
         selfNameEl.textContent = username + ' (you)';
         selfFingerprintEl.textContent = csc.fingerprint(csc.publicKeyB64(identity));
         chatTitleEl.textContent = roomMeta ? roomMeta.name : 'Community room';
+        backToServerBtn.classList.toggle('hidden', !roomMeta);
         if (roomMeta) startRoomTimer();
         connectScreen.classList.add('hidden');
         chatScreen.classList.remove('hidden');
@@ -1100,6 +1267,9 @@
   });
 
   dmClearBtn.addEventListener('click', () => setDmTarget(null));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dmTarget) setDmTarget(null);
+  });
 
   disconnectBtn.addEventListener('click', teardown);
 })();
