@@ -30,6 +30,7 @@
 
 html, body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -107,6 +108,8 @@ input:focus {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .connect-card {
@@ -165,20 +168,23 @@ input:focus {
   font-size: 0.875rem;
 }
 
-#connect-form {
+#connect-form,
+#switch-room-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-#connect-form label {
+#connect-form label,
+#switch-room-form label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-secondary);
   margin-top: 10px;
 }
 
-#connect-form button[type="submit"] {
+#connect-form button[type="submit"],
+#switch-room-form button[type="submit"] {
   margin-top: 20px;
 }
 
@@ -195,13 +201,6 @@ input:focus {
   color: var(--primary);
 }
 
-.settings-panel {
-  margin-top: 8px;
-  padding: 12px 14px;
-  background: var(--bg);
-  border-radius: var(--radius);
-}
-
 .settings-panel label {
   display: block;
   font-size: 0.875rem;
@@ -210,10 +209,63 @@ input:focus {
   margin-bottom: 6px;
 }
 
+.settings-panel label:not(:first-child) {
+  margin-top: 16px;
+}
+
 .settings-hint {
   margin-top: 8px;
   font-size: 0.75rem;
   color: var(--text-secondary);
+}
+
+/* ---------- Settings modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-card {
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-4);
+  padding: 20px 24px 24px;
+  width: 420px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.modal-close {
+  min-height: 0;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text);
 }
 
 .connect-note {
@@ -227,6 +279,106 @@ input:focus {
   margin-top: 12px;
   font-size: 0.875rem;
   color: var(--error);
+}
+
+/* Compact layouts so the connect card always fits the window height. */
+
+@media (max-height: 760px) {
+  .connect-card {
+    padding: 28px 32px;
+  }
+
+  .brand {
+    margin-bottom: 18px;
+  }
+
+  .brand-mark {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 8px;
+  }
+
+  .brand h1 {
+    font-size: 1.5rem;
+  }
+
+  #connect-form button[type="submit"] {
+    margin-top: 14px;
+  }
+
+  .connect-note {
+    margin-top: 12px;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-height: 640px) {
+  .connect-card {
+    padding: 18px 28px;
+  }
+
+  .connect-note {
+    display: none;
+  }
+
+  .brand {
+    margin-bottom: 10px;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 6px;
+  }
+
+  .brand h1 {
+    font-size: 1.25rem;
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  #connect-form label {
+    margin-top: 4px;
+    margin-bottom: 0;
+  }
+
+  input {
+    padding: 7px 12px;
+  }
+
+  .mode-toggle {
+    margin: 8px 0 6px;
+  }
+
+  .mode-btn {
+    min-height: 32px;
+    padding: 4px 12px;
+  }
+
+  #connect-form button[type="submit"] {
+    margin-top: 10px;
+    min-height: 38px;
+    padding: 8px 20px;
+  }
+
+  .room-create-row {
+    margin-top: 8px;
+  }
+
+  .room-create-row .btn-outline {
+    min-height: 36px;
+  }
+
+  #connect-form label.room-extend-opt,
+  #switch-room-form label.room-extend-opt {
+    margin-top: 6px;
+  }
+
+  .settings-toggle {
+    margin-top: 8px;
+  }
 }
 
 /* ---------- Chat screen ---------- */
@@ -793,7 +945,8 @@ input:focus {
   min-height: 40px;
 }
 
-#connect-form label.room-extend-opt {
+#connect-form label.room-extend-opt,
+#switch-room-form label.room-extend-opt {
   display: flex;
   align-items: center;
   gap: 8px;

@@ -51,7 +51,23 @@
         <button type="submit" class="btn-primary">Connect securely</button>
       </form>
       <button type="button" id="settings-toggle" class="settings-toggle">⚙ Settings</button>
-      <div id="settings-panel" class="settings-panel hidden">
+      <p class="connect-note">Fresh ephemeral keys are generated for every
+      session X25519 plus ML-KEM-768, a quantum-resistant hybrid as in
+      Signal's PQXDH and signed by your persistent identity key, so peers
+      can detect key substitution. Messages are end-to-end encrypted with
+      per-message forward secrecy — the server only ever relays ciphertext.</p>
+      <p id="connect-error" class="connect-error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-header">
+        <h2 id="settings-title">Settings</h2>
+        <button type="button" id="settings-close" class="modal-close" title="Close">✕</button>
+      </div>
+      <div id="settings-panel" class="settings-panel">
         <label for="server-url-setting">Server URL</label>
         <input id="server-url-setting" autocomplete="off" placeholder="http://localhost:8000" />
         <p class="settings-hint">The chat server used by "Shared server" mode.
@@ -61,12 +77,35 @@
         <p class="settings-hint">Where private rooms are created and joined.
         Leave blank to use the default. Non-local URLs must be HTTPS.</p>
       </div>
-      <p class="connect-note">Fresh ephemeral keys are generated for every
-      session — X25519 plus ML-KEM-768, a quantum-resistant hybrid as in
-      Signal's PQXDH — and signed by your persistent identity key, so peers
-      can detect key substitution. Messages are end-to-end encrypted with
-      per-message forward secrecy — the server only ever relays ciphertext.</p>
-      <p id="connect-error" class="connect-error hidden"></p>
+    </div>
+  </div>
+
+  <!-- Switch room modal -->
+  <div id="switch-room-modal" class="modal-overlay hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="switch-room-title">
+      <div class="modal-header">
+        <h2 id="switch-room-title">Switch room</h2>
+        <button type="button" id="switch-room-close" class="modal-close" title="Close">✕</button>
+      </div>
+      <form id="switch-room-form">
+        <div class="mode-toggle" role="tablist">
+          <button type="button" id="switch-mode-direct" class="mode-btn active">Shared server</button>
+          <button type="button" id="switch-mode-room" class="mode-btn">Private room</button>
+        </div>
+        <div id="switch-room-fields" class="hidden">
+          <label for="switch-join-code">Join code</label>
+          <input id="switch-join-code" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" />
+          <div class="room-create-row">
+            <input id="switch-room-duration" type="number" min="5" max="480" value="60" title="Room duration in minutes" />
+            <span class="room-create-unit">min</span>
+            <button type="button" id="switch-create-room-btn" class="btn-outline">Create room</button>
+          </div>
+          <label class="room-extend-opt"><input type="checkbox" id="switch-room-allow-extend" checked />
+            Allow extending the room later</label>
+        </div>
+        <p id="switch-room-info" class="room-info hidden"></p>
+        <button type="submit" class="btn-primary">Switch</button>
+      </form>
     </div>
   </div>
 
@@ -100,6 +139,8 @@
       </div>
       <div class="roster-header">Online <span id="roster-count" class="count-chip">0</span></div>
       <ul id="roster" class="roster"></ul>
+      <button id="back-to-server-btn" class="btn-outline hidden">Back to shared server</button>
+      <button id="switch-room-btn" class="btn-outline">Switch room</button>
       <button id="disconnect-btn" class="btn-outline">Disconnect</button>
     </aside>
     <main class="main">
