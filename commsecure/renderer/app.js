@@ -35,16 +35,23 @@
   const settingsCloseBtn = document.getElementById('settings-close');
   const serverUrlSetting = document.getElementById('server-url-setting');
   const lobbyUrlSetting = document.getElementById('lobby-url-setting');
+  const lobbyApiKeySetting = document.getElementById('lobby-api-key-setting');
+  const iceServerSetting = document.getElementById('ice-server-setting');
+  const iceUsernameSetting = document.getElementById('ice-username-setting');
+  const iceCredentialSetting = document.getElementById('ice-credential-setting');
   const modeDirectBtn = document.getElementById('mode-direct');
   const modeRoomBtn = document.getElementById('mode-room');
   const roomFields = document.getElementById('room-fields');
   const joinCodeInput = document.getElementById('join-code');
+  const roomNameInput = document.getElementById('room-name');
   const roomDurationInput = document.getElementById('room-duration');
   const roomAllowExtendInput = document.getElementById('room-allow-extend');
   const createRoomBtn = document.getElementById('create-room-btn');
   const roomInfoEl = document.getElementById('room-info');
   const backToServerBtn = document.getElementById('back-to-server-btn');
   const switchRoomBtn = document.getElementById('switch-room-btn');
+  const switchRoomRecentEl = document.getElementById('switch-room-recent');
+  const switchRoomRecentListEl = document.getElementById('switch-room-recent-list');
   const switchRoomModal = document.getElementById('switch-room-modal');
   const switchRoomCloseBtn = document.getElementById('switch-room-close');
   const switchRoomForm = document.getElementById('switch-room-form');
@@ -52,6 +59,7 @@
   const switchModeRoomBtn = document.getElementById('switch-mode-room');
   const switchRoomFieldsEl = document.getElementById('switch-room-fields');
   const switchJoinCodeInput = document.getElementById('switch-join-code');
+  const switchRoomNameInput = document.getElementById('switch-room-name');
   const switchRoomDurationInput = document.getElementById('switch-room-duration');
   const switchRoomAllowExtendInput = document.getElementById('switch-room-allow-extend');
   const switchCreateRoomBtn = document.getElementById('switch-create-room-btn');
@@ -75,6 +83,17 @@
   const dmIndicator = document.getElementById('dm-indicator');
   const dmNameEl = document.getElementById('dm-name');
   const dmClearBtn = document.getElementById('dm-clear');
+  const incomingCallBanner = document.getElementById('incoming-call-banner');
+  const incomingCallNameEl = document.getElementById('incoming-call-name');
+  const incomingCallAcceptBtn = document.getElementById('incoming-call-accept');
+  const incomingCallDeclineBtn = document.getElementById('incoming-call-decline');
+  const callOverlay = document.getElementById('call-overlay');
+  const callRemoteVideo = document.getElementById('call-remote-video');
+  const callLocalVideo = document.getElementById('call-local-video');
+  const callStatusEl = document.getElementById('call-status');
+  const callToggleMicBtn = document.getElementById('call-toggle-mic');
+  const callToggleCameraBtn = document.getElementById('call-toggle-camera');
+  const callHangupBtn = document.getElementById('call-hangup');
 
   let socket = null;
   let session = null;   // ephemeral X25519 + ML-KEM-768 keys for this connection
@@ -310,6 +329,21 @@
             ? 'Click to go back to messaging everyone'
             : 'Click to message ' + peer.username + ' privately';
         li.addEventListener('click', () => setDmTarget(sid === dmTarget ? null : sid));
+
+        const actions = document.createElement('div');
+        actions.className = 'peer-actions';
+        const callBtn = document.createElement('button');
+        callBtn.type = 'button';
+        callBtn.className = 'roster-call-btn';
+        callBtn.textContent = '📞 Call';
+        callBtn.disabled = !!activeCall || !!pendingIncomingCall;
+        callBtn.title = 'Start an encrypted call with ' + peer.username;
+        callBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); // don't also toggle the DM target
+          startCall(sid);
+        });
+        actions.appendChild(callBtn);
+        li.appendChild(actions);
       }
       rosterEl.appendChild(li);
     }
@@ -383,6 +417,13 @@
       if (!seen.has(sid)) {
         peers.delete(sid);
         if (sid === dmTarget) setDmTarget(null);
+        if (pendingIncomingCall && pendingIncomingCall.sid === sid) {
+          pendingIncomingCall = null;
+          incomingCallBanner.classList.add('hidden');
+        }
+        if (activeCall && activeCall.peerSid === sid) {
+          endCall({ notifyPeer: false, message: peer.username + ' left the room — call ended.' });
+        }
         addMessage({ system: true, text: `${peer.username} left the room` });
       }
     }
@@ -394,6 +435,7 @@
   // and by an in-place room switch, which immediately opens a new
   // connection afterwards instead of returning to the connect screen.
   function resetConnectionState() {
+    endCallForConnectionReset();
     if (socket) {
       socket.removeAllListeners();
       socket.disconnect();
@@ -451,6 +493,10 @@
     return custom || DEFAULT_LOBBY_URL;
   }
 
+  function lobbyApiKey() {
+    return (loadSettings().lobbyApiKey || '').trim();
+  }
+
   settingsToggleBtn.addEventListener('click', () => {
     settingsModal.classList.remove('hidden');
     serverUrlSetting.focus();
@@ -483,6 +529,40 @@
     saveSettings({ lobbyUrl: lobbyUrlSetting.value.trim() });
   });
 
+  lobbyApiKeySetting.value = loadSettings().lobbyApiKey || '';
+  lobbyApiKeySetting.addEventListener('change', () => {
+    saveSettings({ lobbyApiKey: lobbyApiKeySetting.value.trim() });
+  });
+
+  iceServerSetting.value = loadSettings().iceServer || '';
+  iceServerSetting.addEventListener('change', () => {
+    saveSettings({ iceServer: iceServerSetting.value.trim() });
+  });
+
+  iceUsernameSetting.value = loadSettings().iceUsername || '';
+  iceUsernameSetting.addEventListener('change', () => {
+    saveSettings({ iceUsername: iceUsernameSetting.value.trim() });
+  });
+
+  iceCredentialSetting.value = loadSettings().iceCredential || '';
+  iceCredentialSetting.addEventListener('change', () => {
+    saveSettings({ iceCredential: iceCredentialSetting.value.trim() });
+  });
+
+  // Builds the RTCPeerConnection iceServers list from settings. Blank
+  // config means host-only candidates — calls still connect on the same
+  // LAN/simple NAT, just without help crossing a stricter one.
+  function iceServers() {
+    const url = (loadSettings().iceServer || '').trim();
+    if (!url) return [];
+    const entry = { urls: url };
+    const username = (loadSettings().iceUsername || '').trim();
+    const credential = (loadSettings().iceCredential || '').trim();
+    if (username) entry.username = username;
+    if (credential) entry.credential = credential;
+    return [entry];
+  }
+
   // ---- Host keys (persisted so the creator can still extend after an
   // app restart). Entries are pruned at the 8 h platform lifetime cap. ----
 
@@ -513,6 +593,73 @@
   function hostKeyFor(code) {
     const entry = loadHostKeys()[normCode(code)];
     return entry && entry.exp > Date.now() ? entry.key : null;
+  }
+
+  // ---- Recent destinations (so switching rooms doesn't lose the trail) ----
+
+  const ROOM_HISTORY_KEY = 'commsecure-room-history';
+  const ROOM_HISTORY_MAX = 6;
+
+  function historyKey(entry) {
+    return entry.kind === 'room' ? 'room:' + entry.code : 'direct';
+  }
+
+  function loadRoomHistory() {
+    let list;
+    try {
+      list = JSON.parse(localStorage.getItem(ROOM_HISTORY_KEY)) || [];
+    } catch (e) {
+      list = [];
+    }
+    // Rooms drop off the trail once they've expired; the shared server never
+    // expires so it's always eligible to switch back to.
+    return list.filter((e) => e.kind === 'direct' || e.expiresAt > Date.now());
+  }
+
+  // Called on every successful connection so wherever we just left stays
+  // reachable from the switch-room modal. Most-recent-first, deduped by
+  // destination, capped so the list can't grow without bound.
+  function recordRoomHistory(entry) {
+    const key = historyKey(entry);
+    const list = loadRoomHistory().filter((e) => historyKey(e) !== key);
+    list.unshift(entry);
+    localStorage.setItem(ROOM_HISTORY_KEY, JSON.stringify(list.slice(0, ROOM_HISTORY_MAX)));
+  }
+
+  function renderRecentRooms() {
+    const current = roomMeta ? historyKey({ kind: 'room', code: roomMeta.code }) : 'direct';
+    const entries = loadRoomHistory().filter((e) => historyKey(e) !== current);
+    switchRoomRecentListEl.textContent = '';
+    switchRoomRecentEl.classList.toggle('hidden', entries.length === 0);
+    for (const entry of entries) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'recent-room-btn';
+      const name = document.createElement('span');
+      name.className = 'recent-room-name';
+      name.textContent = entry.kind === 'direct' ? 'Shared server' : entry.name;
+      btn.appendChild(name);
+      if (entry.kind === 'room') {
+        const meta = document.createElement('span');
+        meta.className = 'recent-room-meta';
+        meta.textContent = fmtRemaining(entry.expiresAt - Date.now());
+        btn.appendChild(meta);
+      }
+      btn.addEventListener('click', () => switchToRecent(entry));
+      li.appendChild(btn);
+      switchRoomRecentListEl.appendChild(li);
+    }
+  }
+
+  async function switchToRecent(entry) {
+    setSwitchRoomInfo('');
+    try {
+      await beginConnection(entry.kind, entry.kind === 'room' ? entry.code : undefined, setSwitchRoomInfo);
+      closeSwitchRoomModal();
+    } catch (err) {
+      setSwitchRoomInfo('Could not switch back: ' + err.message);
+    }
   }
 
   // ---- Room countdown (chat header) ----
@@ -573,11 +720,16 @@
   }
 
   async function lobbyFetch(base, path, body, headers, method) {
+    const apiKey = lobbyApiKey();
     let res;
     try {
       res = await fetch(base.replace(/\/+$/, '') + path, {
         method: method || (body === undefined ? 'GET' : 'POST'),
-        headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
+        headers: Object.assign(
+          { 'Content-Type': 'application/json' },
+          apiKey ? { 'X-Api-Key': apiKey } : {},
+          headers || {}
+        ),
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
@@ -594,16 +746,18 @@
 
   // Shared by both the initial connect form and the switch-room modal, so
   // creating a room works identically from either place.
-  async function createRoom({ durationInput, allowExtendInput, joinCodeInputEl, report, button }) {
+  async function createRoom({ durationInput, allowExtendInput, nameInput, joinCodeInputEl, report, button }) {
     const minutes = parseInt(durationInput.value, 10);
     if (!minutes) return;
     button.disabled = true;
     report('Creating room…');
     try {
       const allowExtend = allowExtendInput.checked;
+      const name = nameInput.value.trim();
       const room = await lobbyFetch(lobbyUrl(), '/rooms', {
         duration_minutes: minutes,
         allow_extend: allowExtend,
+        name: name || undefined,
       });
       // Keeping the host key marks us as this room's creator: it unlocks
       // the Extend control in the chat header.
@@ -627,6 +781,7 @@
   createRoomBtn.addEventListener('click', () => createRoom({
     durationInput: roomDurationInput,
     allowExtendInput: roomAllowExtendInput,
+    nameInput: roomNameInput,
     joinCodeInputEl: joinCodeInput,
     report: setRoomInfo,
     button: createRoomBtn,
@@ -635,6 +790,7 @@
   switchCreateRoomBtn.addEventListener('click', () => createRoom({
     durationInput: switchRoomDurationInput,
     allowExtendInput: switchRoomAllowExtendInput,
+    nameInput: switchRoomNameInput,
     joinCodeInputEl: switchJoinCodeInput,
     report: setSwitchRoomInfo,
     button: switchCreateRoomBtn,
@@ -742,6 +898,7 @@
     setSwitchMode('direct');
     switchJoinCodeInput.value = '';
     setSwitchRoomInfo('');
+    renderRecentRooms();
     switchRoomModal.classList.remove('hidden');
   }
 
@@ -829,6 +986,11 @@
           sig: csc.signSessionKey(identity, session),
           username: username,
         });
+        recordRoomHistory(
+          roomMeta
+            ? { kind: 'room', code: roomMeta.code, name: roomMeta.name, expiresAt: roomMeta.expiresAt }
+            : { kind: 'direct' }
+        );
         selfNameEl.textContent = username + ' (you)';
         selfFingerprintEl.textContent = csc.fingerprint(csc.publicKeyB64(identity));
         chatTitleEl.textContent = roomMeta ? roomMeta.name : 'Community room';
@@ -925,6 +1087,8 @@
           // own messages.
           const el = messageIndex.get(msgKey(msg.from, envelope.id));
           if (el) tombstoneMessage(el);
+        } else if (typeof envelope.t === 'string' && envelope.t.startsWith('call-')) {
+          await handleCallEnvelope(envelope, msg.from);
         }
         return; // unknown envelope types are dropped, not shown as text
       }
@@ -1269,6 +1433,245 @@
   dmClearBtn.addEventListener('click', () => setDmTarget(null));
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && dmTarget) setDmTarget(null);
+  });
+
+  // ---- Encrypted calling ----
+  // WebRTC offer/answer/ICE ride the same per-peer authenticated E2E
+  // channel as DMs (sendEncrypted with onlySid) instead of a separate
+  // signaling path, so call setup gets the same identity-signed protection
+  // against a MITM relay as everything else. Media itself is additionally
+  // protected by WebRTC's mandatory DTLS-SRTP. One call at a time.
+
+  let activeCall = null; // { peerSid, peerName, pc, localStream, direction, established, micMuted, cameraOff }
+  let pendingIncomingCall = null; // { sid, name, offer, candidates: [] } — ringing, not yet accepted
+
+  function sendCallEnvelope(sid, envelope) {
+    sendEncrypted(ENVELOPE_PREFIX + JSON.stringify(envelope), sid);
+  }
+
+  function setCallStatus(text) {
+    callStatusEl.textContent = text;
+  }
+
+  function newPeerConnection() {
+    const pc = new RTCPeerConnection({ iceServers: iceServers() });
+    pc.onicecandidate = (e) => {
+      if (!e.candidate || !activeCall) return;
+      sendCallEnvelope(activeCall.peerSid, { t: 'call-ice', candidate: e.candidate.toJSON() });
+    };
+    pc.ontrack = (e) => {
+      callRemoteVideo.srcObject = e.streams[0] || null;
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') setCallStatus('');
+      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState) && activeCall && activeCall.pc === pc) {
+        endCall({ notifyPeer: false, message: 'Call disconnected.' });
+      }
+    };
+    return pc;
+  }
+
+  async function getCallMedia() {
+    return navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    });
+  }
+
+  // Congestion control starts conservative and ramps up slowly, especially
+  // over the TURN relay hop. Raise the ceiling so a good connection can
+  // actually reach 720p-ish quality instead of settling for its default cap.
+  async function raiseVideoBitrate(pc) {
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (!sender) return;
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    params.encodings[0].maxBitrate = 2500000;
+    try {
+      await sender.setParameters(params);
+    } catch (e) {
+      // Not fatal — call still works at the default bitrate cap.
+    }
+  }
+
+  function showCallOverlay() {
+    incomingCallBanner.classList.add('hidden');
+    callOverlay.classList.remove('hidden');
+  }
+
+  function hideCallOverlay() {
+    callOverlay.classList.add('hidden');
+    callRemoteVideo.srcObject = null;
+    callLocalVideo.srcObject = null;
+    callToggleMicBtn.classList.remove('muted');
+    callToggleCameraBtn.classList.remove('muted');
+  }
+
+  async function startCall(sid) {
+    const peer = peers.get(sid);
+    if (activeCall || pendingIncomingCall || !peer || !peer.state) return;
+    let localStream;
+    try {
+      localStream = await getCallMedia();
+    } catch (e) {
+      addMessage({ system: true, warning: true, text: 'Could not access camera/microphone: ' + e.message });
+      return;
+    }
+    const pc = newPeerConnection();
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    await raiseVideoBitrate(pc);
+    activeCall = {
+      peerSid: sid,
+      peerName: peer.username,
+      pc,
+      localStream,
+      direction: 'outgoing',
+      established: false,
+      micMuted: false,
+      cameraOff: false,
+    };
+    callLocalVideo.srcObject = localStream;
+    setCallStatus('Calling ' + peer.username + '…');
+    showCallOverlay();
+    renderRoster();
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sendCallEnvelope(sid, { t: 'call-offer', sdp: offer.sdp });
+  }
+
+  async function acceptIncomingCall() {
+    if (!pendingIncomingCall) return;
+    const { sid, name, offer, candidates } = pendingIncomingCall;
+    pendingIncomingCall = null;
+    let localStream;
+    try {
+      localStream = await getCallMedia();
+    } catch (e) {
+      addMessage({ system: true, warning: true, text: 'Could not access camera/microphone: ' + e.message });
+      sendCallEnvelope(sid, { t: 'call-end' });
+      incomingCallBanner.classList.add('hidden');
+      return;
+    }
+    const pc = newPeerConnection();
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    await raiseVideoBitrate(pc);
+    activeCall = {
+      peerSid: sid,
+      peerName: name,
+      pc,
+      localStream,
+      direction: 'incoming',
+      established: true,
+      micMuted: false,
+      cameraOff: false,
+    };
+    callLocalVideo.srcObject = localStream;
+    setCallStatus('Connecting…');
+    showCallOverlay();
+    renderRoster();
+    await pc.setRemoteDescription({ type: 'offer', sdp: offer });
+    for (const candidate of candidates) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (e) {
+        // A stale/invalid candidate here just means one fewer ICE path.
+      }
+    }
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sendCallEnvelope(sid, { t: 'call-answer', sdp: answer.sdp });
+  }
+
+  function declineIncomingCall() {
+    if (!pendingIncomingCall) return;
+    sendCallEnvelope(pendingIncomingCall.sid, { t: 'call-end' });
+    pendingIncomingCall = null;
+    incomingCallBanner.classList.add('hidden');
+    renderRoster();
+  }
+
+  function endCall({ notifyPeer = true, message = 'Call ended.' } = {}) {
+    if (!activeCall) return;
+    const { peerSid, pc, localStream } = activeCall;
+    if (notifyPeer) sendCallEnvelope(peerSid, { t: 'call-end' });
+    pc.onicecandidate = null;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    pc.close();
+    localStream.getTracks().forEach((track) => track.stop());
+    activeCall = null;
+    hideCallOverlay();
+    renderRoster();
+    if (message) addMessage({ system: true, text: message });
+  }
+
+  // Called when the current connection is torn down (disconnect, room
+  // switch) — nothing on the other end will be listening for signaling
+  // envelopes afterward, so there's no peer left to notify.
+  function endCallForConnectionReset() {
+    if (pendingIncomingCall) {
+      pendingIncomingCall = null;
+      incomingCallBanner.classList.add('hidden');
+    }
+    if (activeCall) endCall({ notifyPeer: false, message: null });
+  }
+
+  async function handleCallEnvelope(envelope, from) {
+    const peer = peers.get(from);
+    if (envelope.t === 'call-offer' && typeof envelope.sdp === 'string') {
+      if (activeCall || pendingIncomingCall || !peer) {
+        sendCallEnvelope(from, { t: 'call-busy' });
+        return;
+      }
+      pendingIncomingCall = { sid: from, name: peer.username, offer: envelope.sdp, candidates: [] };
+      incomingCallNameEl.textContent = peer.username;
+      incomingCallBanner.classList.remove('hidden');
+      renderRoster();
+    } else if (envelope.t === 'call-answer' && typeof envelope.sdp === 'string') {
+      if (!activeCall || activeCall.peerSid !== from || activeCall.direction !== 'outgoing') return;
+      activeCall.established = true;
+      await activeCall.pc.setRemoteDescription({ type: 'answer', sdp: envelope.sdp });
+    } else if (envelope.t === 'call-ice' && envelope.candidate) {
+      if (activeCall && activeCall.peerSid === from) {
+        try {
+          await activeCall.pc.addIceCandidate(envelope.candidate);
+        } catch (e) {
+          // Ignore — a dropped candidate just means one fewer ICE path.
+        }
+      } else if (pendingIncomingCall && pendingIncomingCall.sid === from) {
+        pendingIncomingCall.candidates.push(envelope.candidate);
+      }
+    } else if (envelope.t === 'call-end') {
+      if (pendingIncomingCall && pendingIncomingCall.sid === from) {
+        pendingIncomingCall = null;
+        incomingCallBanner.classList.add('hidden');
+        renderRoster();
+      } else if (activeCall && activeCall.peerSid === from) {
+        endCall({ notifyPeer: false, message: (peer ? peer.username : 'The other person') + ' ended the call.' });
+      }
+    } else if (envelope.t === 'call-busy') {
+      if (activeCall && activeCall.peerSid === from && !activeCall.established) {
+        endCall({ notifyPeer: false, message: (peer ? peer.username : 'They') + ' are on another call.' });
+      }
+    }
+  }
+
+  callHangupBtn.addEventListener('click', () => endCall());
+  incomingCallAcceptBtn.addEventListener('click', acceptIncomingCall);
+  incomingCallDeclineBtn.addEventListener('click', declineIncomingCall);
+
+  callToggleMicBtn.addEventListener('click', () => {
+    if (!activeCall) return;
+    activeCall.micMuted = !activeCall.micMuted;
+    activeCall.localStream.getAudioTracks().forEach((t) => (t.enabled = !activeCall.micMuted));
+    callToggleMicBtn.classList.toggle('muted', activeCall.micMuted);
+  });
+
+  callToggleCameraBtn.addEventListener('click', () => {
+    if (!activeCall) return;
+    activeCall.cameraOff = !activeCall.cameraOff;
+    activeCall.localStream.getVideoTracks().forEach((t) => (t.enabled = !activeCall.cameraOff));
+    callToggleCameraBtn.classList.toggle('muted', activeCall.cameraOff);
   });
 
   disconnectBtn.addEventListener('click', teardown);

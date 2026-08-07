@@ -219,6 +219,21 @@ input:focus {
   color: var(--text-secondary);
 }
 
+.settings-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--divider);
+}
+
+.settings-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
 /* ---------- Settings modal ---------- */
 
 .modal-overlay {
@@ -969,6 +984,62 @@ input:focus {
   padding: 10px 12px;
 }
 
+/* ---------- Recent rooms (switch modal) ---------- */
+
+.recent-rooms {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.recent-rooms-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.recent-rooms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-room-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-room-btn:hover {
+  border-color: var(--primary);
+}
+
+.recent-room-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-room-meta {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
 /* ---------- Message context menu ---------- */
 
 .context-menu {
@@ -997,4 +1068,130 @@ input:focus {
 
 .context-menu-item:hover {
   background: rgba(220, 38, 38, 0.08);
+}
+
+/* ---------- Calling ---------- */
+
+.roster .peer-actions {
+  display: none;
+  gap: 6px;
+  margin-top: 6px;
+  margin-left: 16px;
+}
+
+.roster li.dm-able .peer-actions {
+  display: flex;
+}
+
+.roster-call-btn {
+  min-height: 0;
+  padding: 3px 9px;
+  font-size: 0.75rem;
+  background: var(--paper);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.roster-call-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.roster-call-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.incoming-call-banner {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-4);
+  border: 1px solid var(--divider);
+}
+
+.incoming-call-text {
+  font-size: 0.9375rem;
+}
+
+.incoming-call-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+  background: rgba(15, 23, 42, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.call-video-wrap {
+  position: relative;
+  width: min(80vw, 960px);
+  aspect-ratio: 16 / 9;
+  background: #0f172a;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0f172a;
+}
+
+.call-local-video {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 22%;
+  min-width: 120px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-4);
+  outline: 2px solid rgba(255, 255, 255, 0.15);
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror the local camera, matches expectation */
+}
+
+.call-status {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  color: #f8fafc;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.call-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.call-controls .btn-outline,
+.call-controls .btn-end-room {
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 0.9375rem;
+}
+
+.call-controls .btn-outline.muted {
+  color: var(--error);
+  border-color: var(--error);
 }

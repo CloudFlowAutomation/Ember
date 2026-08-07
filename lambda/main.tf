@@ -21,6 +21,9 @@ terraform {
     archive = {
       source = "hashicorp/archive"
     }
+    random = {
+      source = "hashicorp/random"
+    }
   }
 }
 
@@ -68,6 +71,22 @@ data "archive_file" "lobby" {
   source_dir  = "${path.module}/.terraform/build"
   output_path = "${path.module}/.terraform/lobby_lambda.zip"
   depends_on  = [terraform_data.lobby_bundle]
+}
+
+# Shared API key gating every lobby request. Stored in SSM (not the
+# function's env) so it never shows in the Lambda console; the handler
+# fetches it once per sandbox. Read it out with:
+#   terraform output -raw lobby_api_key
+# Rotate by tainting: terraform apply -replace=random_password.lobby_api_key
+resource "random_password" "lobby_api_key" {
+  length  = 32
+  special = false
+}
+
+resource "aws_ssm_parameter" "lobby_api_key" {
+  name  = "/commsecure/lobby-api-key"
+  type  = "SecureString"
+  value = random_password.lobby_api_key.result
 }
 
 resource "aws_dynamodb_table" "rooms" {
@@ -142,6 +161,13 @@ resource "aws_iam_role_policy" "lobby" {
         Resource = aws_dynamodb_table.rooms.arn
       },
       {
+        # Decryption uses the AWS-managed aws/ssm key, which needs no
+        # explicit kms:Decrypt grant.
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = aws_ssm_parameter.lobby_api_key.arn
+      },
+      {
         # MicroVM actions live in the lambda: namespace (see README).
         Effect = "Allow"
         Action = [
@@ -186,13 +212,15 @@ resource "aws_lambda_function" "lobby" {
       MICROVM_IMAGE_ARN          = var.microvm_image_arn
       MICROVM_EXECUTION_ROLE_ARN = aws_iam_role.room.arn
       ROOM_IDLE_SECONDS          = tostring(var.room_idle_seconds)
+      LOBBY_API_KEY_PARAM        = aws_ssm_parameter.lobby_api_key.name
     }
   }
 }
 
-# Public URL; auth is by unguessable join code + short room lifetimes,
-# same trust model as the FastAPI lobby. CORS (incl. OPTIONS preflight
-# from the app's file:// origin) is answered by the handler itself.
+# Public URL; the handler itself checks X-Api-Key against the SSM
+# parameter (join codes + short room lifetimes guard the rooms). CORS
+# (incl. OPTIONS preflight from the app's file:// origin) is answered
+# by the handler too.
 resource "aws_lambda_function_url" "lobby" {
   function_name      = aws_lambda_function.lobby.function_name
   authorization_type = "NONE"
@@ -209,6 +237,12 @@ resource "aws_lambda_permission" "public_url" {
 output "lobby_url" {
   description = "Point the Electron app's LOBBY_URL here"
   value       = aws_lambda_function_url.lobby.function_url
+}
+
+output "lobby_api_key" {
+  description = "Paste into the app's Settings → Rooms API key (terraform output -raw lobby_api_key)"
+  value       = random_password.lobby_api_key.result
+  sensitive   = true
 }
 
 output "rooms_table" {
