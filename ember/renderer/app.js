@@ -1,4 +1,4 @@
-/* CommSecure renderer: connection lifecycle, roster, encrypted messaging.
+/* Ember renderer: connection lifecycle, roster, encrypted messaging.
    Session/encryption keys live only in this renderer's memory and are
    destroyed on disconnect. The persistent Ed25519 identity key (loaded via
    the preload bridge) signs each ephemeral session key so peers can detect
@@ -6,8 +6,8 @@
 (function () {
   'use strict';
 
-  const csc = window.CommSecureCrypto;
-  const PINS_KEY = 'commsecure-identity-pins';
+  const csc = window.EmberCrypto;
+  const PINS_KEY = 'ember-identity-pins';
 
   // Plaintexts starting with this control byte carry a JSON envelope
   // ({t:'text'|'image'|'file'|'delete'}, optionally {dm:true}); anything
@@ -469,7 +469,7 @@
   // control plane that provisions each private room's MicroVM.
   const DEFAULT_SERVER_URL = 'http://localhost:8000';
   const DEFAULT_LOBBY_URL = 'http://localhost:8100';
-  const SETTINGS_KEY = 'commsecure-settings';
+  const SETTINGS_KEY = 'ember-settings';
 
   function loadSettings() {
     try {
@@ -566,7 +566,7 @@
   // ---- Host keys (persisted so the creator can still extend after an
   // app restart). Entries are pruned at the 8 h platform lifetime cap. ----
 
-  const HOSTKEYS_KEY = 'commsecure-host-keys';
+  const HOSTKEYS_KEY = 'ember-host-keys';
 
   function normCode(code) {
     return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -597,7 +597,7 @@
 
   // ---- Recent destinations (so switching rooms doesn't lose the trail) ----
 
-  const ROOM_HISTORY_KEY = 'commsecure-room-history';
+  const ROOM_HISTORY_KEY = 'ember-room-history';
   const ROOM_HISTORY_MAX = 6;
 
   function historyKey(entry) {

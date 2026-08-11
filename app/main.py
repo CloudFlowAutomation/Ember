@@ -1,4 +1,4 @@
-"""CommSecure relay server.
+"""Ember relay server.
 
 A zero-knowledge Socket.IO relay: clients register an ephemeral X25519
 public key, the server maintains a roster and forwards ciphertext between
@@ -31,7 +31,7 @@ sio = socketio.AsyncServer(
     max_http_buffer_size=32_000_000,
 )
 
-fastapi_app = FastAPI(title="CommSecure Relay")
+fastapi_app = FastAPI(title="Ember Relay")
 
 # Socket.IO handles /socket.io/*; everything else falls through to FastAPI
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
@@ -105,11 +105,11 @@ async def room_watchdog() -> None:
 
 INFO_PAGE = """<!DOCTYPE html>
 <html>
-<head><title>CommSecure Relay</title></head>
+<head><title>Ember Relay</title></head>
 <body style="font-family: Inter, system-ui, sans-serif; background: #f8fafc; color: #0f172a; padding: 48px;">
-  <h1 style="letter-spacing: -0.02em;">CommSecure Relay</h1>
+  <h1 style="letter-spacing: -0.02em;">Ember Relay</h1>
   <p style="color: #64748b; max-width: 60ch;">This server relays end-to-end
-  encrypted messages for the CommSecure desktop app. It stores no messages
+  encrypted messages for the Ember desktop app. It stores no messages
   and holds no keys.</p>
 </body>
 </html>"""

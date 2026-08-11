@@ -36,7 +36,7 @@ function createWindow() {
     height: 720,
     minWidth: 800,
     minHeight: 520,
-    title: 'CommSecure – Community Secure Chat',
+    title: 'Ember – Community Secure Chat',
     backgroundColor: '#f8fafc',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

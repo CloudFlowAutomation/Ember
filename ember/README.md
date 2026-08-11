@@ -1,6 +1,6 @@
-# CommSecure desktop app
+# Ember desktop app
 
-Electron client for CommSecure. All cryptography runs in the renderer; see
+Electron client for Ember. All cryptography runs in the renderer; see
 the repo root `README.md` for the E2E/forward-secrecy design and the shared
 relay. This file covers running the app and deploying the **temporary
 private-room infrastructure** it connects to.
@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-## Distributing builds ("CommSecure is damaged" fix)
+## Distributing builds ("Ember is damaged" fix)
 
 macOS Gatekeeper reports downloaded copies of the app as *"damaged and
 can't be opened"* when the build is not signed with a Developer ID
@@ -35,7 +35,7 @@ service rejects your regular Apple ID password with a 401. To generate one:
 1. Sign in at [account.apple.com](https://account.apple.com) with the Apple ID
    used for the developer account.
 2. Go to **Sign-In and Security → App-Specific Passwords**.
-3. Click **+**, label it (e.g. `commsecure-notarize`), and copy the generated
+3. Click **+**, label it (e.g. `ember-notarize`), and copy the generated
    `abcd-efgh-ijkl-mnop` password — it is shown only once, and the dashes are
    part of it.
 
@@ -43,7 +43,7 @@ This requires an Apple Developer Program membership. Until then, people
 who download an unsigned build can clear the quarantine flag manually:
 
 ```bash
-xattr -cr /path/to/CommSecure.app
+xattr -cr /path/to/Ember.app
 ```
 
 ## Deploy temporary room infrastructure

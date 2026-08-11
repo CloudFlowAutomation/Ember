@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Ember app icon: flame mark on a warm ember gradient -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7c2d12"/>
+      <stop offset="1" stop-color="#1c0a05"/>
+    </linearGradient>
+    <linearGradient id="outerFlame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f97316"/>
+      <stop offset="0.55" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <linearGradient id="innerFlame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#fef08a"/>
+      <stop offset="0.6" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.62" r="0.42">
+      <stop offset="0" stop-color="#fde68a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fde68a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- macOS-style rounded square -->
+  <rect x="76" y="76" width="872" height="872" rx="196" fill="url(#bg)"/>
+
+  <!-- soft glow behind the flame -->
+  <circle cx="512" cy="600" r="360" fill="url(#glow)"/>
+
+  <!-- outer flame -->
+  <path fill="url(#outerFlame)" d="
+    M512 178
+    C 420 300 372 392 372 480
+    C 372 556 412 592 412 592
+    C 388 552 386 500 414 452
+    C 424 500 452 528 452 528
+    C 440 460 468 380 540 300
+    C 560 380 548 432 596 472
+    C 648 516 668 568 668 616
+    C 668 730 588 806 512 806
+    C 412 806 316 728 316 616
+    C 316 512 372 440 428 372
+    C 406 452 420 512 460 552
+    C 420 460 460 320 512 178
+    Z"/>
+
+  <!-- inner flame -->
+  <path fill="url(#innerFlame)" d="
+    M520 400
+    C 476 462 456 512 456 556
+    C 456 622 500 664 548 664
+    C 596 664 636 624 636 568
+    C 636 526 612 496 588 468
+    C 592 500 580 522 566 534
+    C 578 492 566 448 520 400
+    Z"/>
+</svg>

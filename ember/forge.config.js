@@ -44,7 +44,7 @@ if (
 
 module.exports = {
   packagerConfig: {
-    appBundleId: 'io.darkmatterit.commsecure',
+    appBundleId: 'io.darkmatterit.ember',
     icon: path.resolve(__dirname, 'assets', 'icon'),
     ...osxSign,
     ...osxNotarize,

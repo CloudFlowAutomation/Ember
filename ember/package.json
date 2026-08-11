@@ -1,8 +1,8 @@
 {
-  "name": "commsecure",
-  "productName": "CommSecure",
-  "version": "0.9.0",
-  "description": "CommSecure - Community Secure Chat. End-to-end encrypted group chat with perfect forward secrecy.",
+  "name": "ember",
+  "productName": "Ember",
+  "version": "0.10.0",
+  "description": "Ember - Community Secure Chat. End-to-end encrypted group chat with perfect forward secrecy.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

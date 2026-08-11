@@ -1,4 +1,4 @@
-# CommSecure – Community Secure Chat
+# Ember – Community Secure Chat
 
 End-to-end encrypted group chat with **perfect forward secrecy (PFS)** and
 **post-quantum hybrid key agreement** (X25519 + ML-KEM-768, in the style of
@@ -10,7 +10,7 @@ Two parts:
   maintains a roster of `{sid, public key, username}` and forwards opaque
   ciphertext between clients. It stores no messages and never sees plaintext
   or private keys.
-- **CommSecure desktop app** (`commsecure/`) — an Electron client themed to
+- **Ember desktop app** (`ember/`) — an Electron client themed to
   match TownCenter. All cryptography runs in the client.
 
 ## How forward secrecy works
@@ -71,7 +71,7 @@ fit; the Socket.IO server buffer is raised to match in `app/main.py`.)
 
 ## Private rooms on AWS Lambda MicroVMs
 
-Beyond the shared relay, CommSecure can run **one isolated relay per
+Beyond the shared relay, Ember can run **one isolated relay per
 private room**, each in its own [Lambda MicroVM](https://docs.aws.amazon.com/lambda/latest/dg/lambda-microvms-guide.html)
 (a Firecracker VM with a dedicated HTTPS endpoint). The **lobby**
 (`app/lobby.py`) is the control plane:
@@ -141,7 +141,7 @@ curl -s localhost:8100/rooms/join -H 'content-type: application/json' \
 ## Run the desktop app
 
 ```bash
-cd commsecure
+cd ember
 npm install
 npm start
 ```
@@ -170,7 +170,7 @@ total room lifetime.
 With the server running:
 
 ```bash
-cd commsecure
+cd ember
 node test/e2e-sim.js http://127.0.0.1:8000
 ```
 
