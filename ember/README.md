@@ -1,6 +1,6 @@
-# CommSecure desktop app
+# ember desktop app
 
-Electron client for CommSecure. All cryptography runs in the renderer; see
+Electron client for ember. All cryptography runs in the renderer; see
 the repo root `README.md` for the E2E/forward-secrecy design and the shared
 relay. This file covers running the app and deploying the **temporary
 private-room infrastructure** it connects to.
@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-## Distributing builds ("CommSecure is damaged" fix)
+## Distributing builds ("ember is damaged" fix)
 
 macOS Gatekeeper reports downloaded copies of the app as *"damaged and
 can't be opened"* when the build is not signed with a Developer ID
@@ -35,7 +35,7 @@ service rejects your regular Apple ID password with a 401. To generate one:
 1. Sign in at [account.apple.com](https://account.apple.com) with the Apple ID
    used for the developer account.
 2. Go to **Sign-In and Security → App-Specific Passwords**.
-3. Click **+**, label it (e.g. `commsecure-notarize`), and copy the generated
+3. Click **+**, label it (e.g. `ember-notarize`), and copy the generated
    `abcd-efgh-ijkl-mnop` password — it is shown only once, and the dashes are
    part of it.
 
@@ -43,7 +43,7 @@ This requires an Apple Developer Program membership. Until then, people
 who download an unsigned build can clear the quarantine flag manually:
 
 ```bash
-xattr -cr /path/to/CommSecure.app
+xattr -cr /path/to/ember.app
 ```
 
 ## Deploy temporary room infrastructure
@@ -78,10 +78,10 @@ BUILD_ROLE_ARN=arn:aws:iam::<account>:role/MicrovmBuildRole \
 ```
 
 The script zips the relay (`Dockerfile`, `app/`, `src/`), uploads it to S3,
-creates or updates the `commsecure-room` MicroVM image, and waits for the
-build (progress in CloudWatch log group `/aws/lambda/microvms/commsecure-room`).
+creates or updates the `ember-room` MicroVM image, and waits for the
+build (progress in CloudWatch log group `/aws/lambda/microvms/ember-room`).
 On success it prints the `MICROVM_IMAGE_ARN` to export. Optional env:
-`AWS_REGION` (default `us-east-1`), `IMAGE_NAME` (default `commsecure-room`).
+`AWS_REGION` (default `us-east-1`), `IMAGE_NAME` (default `ember-room`).
 
 Re-run the same command any time the relay code changes; rooms created
 afterwards use the updated image.
@@ -89,8 +89,8 @@ afterwards use the updated image.
 ### 3. Start the lobby
 
 ```bash
-export MICROVM_IMAGE_ARN=arn:aws:lambda:…:microvm-image:commsecure-room
-export MICROVM_EXECUTION_ROLE_ARN=arn:aws:iam::<account>:role/CommSecureRoomRole
+export MICROVM_IMAGE_ARN=arn:aws:lambda:…:microvm-image:ember-room
+export MICROVM_EXECUTION_ROLE_ARN=arn:aws:iam::<account>:role/emberRoomRole
 uv run uvicorn app.lobby:app --port 8100
 ```
 

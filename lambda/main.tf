@@ -1,12 +1,12 @@
-# CommSecure lobby — Lambda deployment.
+# ember lobby — Lambda deployment.
 #
 # Provisions everything lobby_lambda.py needs: the function (with a public
 # Function URL the Electron app uses as LOBBY_URL), the DynamoDB join-code
 # table, an IAM role allowing the MicroVM control-plane calls, and the
-# CommSecureRoomRole execution role room VMs use to self-terminate.
+# emberRoomRole execution role room VMs use to self-terminate.
 #
 #   terraform init
-#   terraform apply -var microvm_image_arn=arn:aws:lambda:…:microvm-image:commsecure-room
+#   terraform apply -var microvm_image_arn=arn:aws:lambda:…:microvm-image:ember-room
 #
 # The room image itself is still built by scripts/deploy_room_image.sh;
 # pass its ARN in via microvm_image_arn.
@@ -20,6 +20,9 @@ terraform {
     }
     archive = {
       source = "hashicorp/archive"
+    }
+    random = {
+      source = "hashicorp/random"
     }
   }
 }
@@ -36,7 +39,7 @@ variable "microvm_image_arn" {
 
 variable "rooms_table_name" {
   type    = string
-  default = "commsecure-rooms"
+  default = "ember-rooms"
 }
 
 variable "room_idle_seconds" {
@@ -46,6 +49,20 @@ variable "room_idle_seconds" {
 
 provider "aws" {
   region = var.region
+}
+
+# Shared API key the Electron app must send as X-Api-Key on every lobby
+# request. Stored in SSM so it never lands in the function's plain-text
+# environment; the lambda reads it once per sandbox.
+resource "random_password" "lobby_api_key" {
+  length  = 40
+  special = false
+}
+
+resource "aws_ssm_parameter" "lobby_api_key" {
+  name  = "/ember/lobby-api-key"
+  type  = "SecureString"
+  value = random_password.lobby_api_key.result
 }
 
 # The runtime's bundled boto3 predates the lambda-microvms service, so the
@@ -89,7 +106,7 @@ resource "aws_dynamodb_table" "rooms" {
 # Execution role for the room MicroVMs themselves: lets a room's relay
 # call terminate-microvm on its own VM when idle (see room_watchdog).
 resource "aws_iam_role" "room" {
-  name = "CommSecureRoomRole"
+  name = "emberRoomRole"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -114,7 +131,7 @@ resource "aws_iam_role_policy" "room" {
 }
 
 resource "aws_iam_role" "lobby" {
-  name = "commsecure-lobby-lambda"
+  name = "ember-lobby-lambda"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -164,12 +181,17 @@ resource "aws_iam_role_policy" "lobby" {
         Action   = "lambda:PassNetworkConnector"
         Resource = "*"
       },
+      {
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = aws_ssm_parameter.lobby_api_key.arn
+      },
     ]
   })
 }
 
 resource "aws_lambda_function" "lobby" {
-  function_name    = "commsecure-lobby"
+  function_name    = "ember-lobby"
   role             = aws_iam_role.lobby.arn
   runtime          = "python3.13"
   handler          = "lobby_lambda.lambda_handler"
@@ -186,13 +208,15 @@ resource "aws_lambda_function" "lobby" {
       MICROVM_IMAGE_ARN          = var.microvm_image_arn
       MICROVM_EXECUTION_ROLE_ARN = aws_iam_role.room.arn
       ROOM_IDLE_SECONDS          = tostring(var.room_idle_seconds)
+      LOBBY_API_KEY_PARAM        = aws_ssm_parameter.lobby_api_key.name
     }
   }
 }
 
-# Public URL; auth is by unguessable join code + short room lifetimes,
-# same trust model as the FastAPI lobby. CORS (incl. OPTIONS preflight
-# from the app's file:// origin) is answered by the handler itself.
+# Public URL; the handler itself enforces the shared X-Api-Key, and rooms
+# are further guarded by unguessable join codes + short lifetimes. CORS
+# (incl. OPTIONS preflight from the app's file:// origin) is answered by
+# the handler too.
 resource "aws_lambda_function_url" "lobby" {
   function_name      = aws_lambda_function.lobby.function_name
   authorization_type = "NONE"
@@ -209,6 +233,12 @@ resource "aws_lambda_permission" "public_url" {
 output "lobby_url" {
   description = "Point the Electron app's LOBBY_URL here"
   value       = aws_lambda_function_url.lobby.function_url
+}
+
+output "lobby_api_key" {
+  description = "Paste into the app's Settings → Rooms API key (terraform output -raw lobby_api_key)"
+  value       = random_password.lobby_api_key.result
+  sensitive   = true
 }
 
 output "rooms_table" {

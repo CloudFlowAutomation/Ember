@@ -924,6 +924,57 @@ input:focus {
   font-weight: 600;
 }
 
+/* Quick-pick list in the switch-room modal */
+
+.switch-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.switch-room-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1.5px solid var(--divider);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+}
+
+.switch-room-item:hover:not(:disabled) {
+  border-color: var(--secondary);
+}
+
+.switch-room-item.current {
+  border-color: var(--primary);
+  color: var(--primary);
+  opacity: 1;
+  cursor: default;
+}
+
+.switch-room-item .room-item-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-room-item .room-item-sub {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.switch-room-item.current .room-item-sub {
+  color: inherit;
+  opacity: 0.75;
+}
+
 .room-create-row {
   display: flex;
   align-items: center;

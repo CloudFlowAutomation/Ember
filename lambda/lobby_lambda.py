@@ -11,7 +11,9 @@ needs LOBBY_URL pointed at this function's URL.
 
 Handler: lobby_lambda.lambda_handler. boto3 is bundled into the zip by
 main.tf — the runtime's copy is too old to know lambda-microvms. Env: ROOMS_TABLE (default commsecure-rooms), MICROVM_IMAGE_ARN
-(required), MICROVM_EXECUTION_ROLE_ARN, ROOM_IDLE_SECONDS (default 600).
+(required), MICROVM_EXECUTION_ROLE_ARN, ROOM_IDLE_SECONDS (default 600),
+LOBBY_API_KEY_PARAM (SSM SecureString name; unset disables the API-key
+check, e.g. for local dev).
 DynamoDB table: partition key `code` (S); enable TTL on `expires_at`.
 
 Deploy: `terraform apply` in this folder provisions all of the above
@@ -36,6 +38,7 @@ IMAGE_ARN = os.environ.get("MICROVM_IMAGE_ARN", "")
 EXECUTION_ROLE_ARN = os.environ.get("MICROVM_EXECUTION_ROLE_ARN", "")
 ROOMS_TABLE = os.environ.get("ROOMS_TABLE", "commsecure-rooms")
 ROOM_IDLE_SECONDS = int(os.environ.get("ROOM_IDLE_SECONDS", "600"))
+API_KEY_PARAM = os.environ.get("LOBBY_API_KEY_PARAM", "")
 ROOM_PORT = 8080
 MIN_MINUTES = 5
 MAX_MINUTES = 480
@@ -47,6 +50,19 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 mvm = boto3.client("lambda-microvms", region_name=REGION)
 rooms = boto3.resource("dynamodb", region_name=REGION).Table(ROOMS_TABLE)
+
+_api_key = None
+
+
+def api_key():
+    """The shared lobby key, fetched from SSM once per sandbox."""
+    global _api_key
+    if _api_key is None:
+        resp = boto3.client("ssm", region_name=REGION).get_parameter(
+            Name=API_KEY_PARAM, WithDecryption=True
+        )
+        _api_key = resp["Parameter"]["Value"]
+    return _api_key
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -315,6 +331,10 @@ def lambda_handler(event, context):
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
 
     try:
+        if API_KEY_PARAM and not secrets.compare_digest(
+            str(headers.get("x-api-key") or ""), api_key()
+        ):
+            return error(401, "Missing or invalid API key")
         if method == "POST" and path == "/rooms":
             return create_room(body)
         if method == "POST" and path == "/rooms/join":

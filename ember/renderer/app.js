@@ -35,6 +35,7 @@
   const settingsCloseBtn = document.getElementById('settings-close');
   const serverUrlSetting = document.getElementById('server-url-setting');
   const lobbyUrlSetting = document.getElementById('lobby-url-setting');
+  const lobbyApiKeySetting = document.getElementById('lobby-api-key-setting');
   const modeDirectBtn = document.getElementById('mode-direct');
   const modeRoomBtn = document.getElementById('mode-room');
   const roomFields = document.getElementById('room-fields');
@@ -47,6 +48,7 @@
   const switchRoomBtn = document.getElementById('switch-room-btn');
   const switchRoomModal = document.getElementById('switch-room-modal');
   const switchRoomCloseBtn = document.getElementById('switch-room-close');
+  const switchRoomListEl = document.getElementById('switch-room-list');
   const switchRoomForm = document.getElementById('switch-room-form');
   const switchModeDirectBtn = document.getElementById('switch-mode-direct');
   const switchModeRoomBtn = document.getElementById('switch-mode-room');
@@ -451,6 +453,10 @@
     return custom || DEFAULT_LOBBY_URL;
   }
 
+  function lobbyApiKey() {
+    return (loadSettings().lobbyApiKey || '').trim();
+  }
+
   settingsToggleBtn.addEventListener('click', () => {
     settingsModal.classList.remove('hidden');
     serverUrlSetting.focus();
@@ -483,6 +489,11 @@
     saveSettings({ lobbyUrl: lobbyUrlSetting.value.trim() });
   });
 
+  lobbyApiKeySetting.value = loadSettings().lobbyApiKey || '';
+  lobbyApiKeySetting.addEventListener('change', () => {
+    saveSettings({ lobbyApiKey: lobbyApiKeySetting.value.trim() });
+  });
+
   // ---- Host keys (persisted so the creator can still extend after an
   // app restart). Entries are pruned at the 8 h platform lifetime cap. ----
 
@@ -513,6 +524,42 @@
   function hostKeyFor(code) {
     const entry = loadHostKeys()[normCode(code)];
     return entry && entry.exp > Date.now() ? entry.key : null;
+  }
+
+  // ---- Known rooms (persisted so the switch screen lists every room this
+  // client has created or joined; entries vanish when the room expires). ----
+
+  const KNOWN_ROOMS_KEY = 'commsecure-known-rooms';
+
+  function loadKnownRooms() {
+    let all;
+    try {
+      all = JSON.parse(localStorage.getItem(KNOWN_ROOMS_KEY)) || {};
+    } catch (e) {
+      all = {};
+    }
+    const now = Date.now();
+    let dirty = false;
+    for (const c of Object.keys(all)) {
+      if (!all[c] || !(all[c].exp > now)) {
+        delete all[c];
+        dirty = true;
+      }
+    }
+    if (dirty) localStorage.setItem(KNOWN_ROOMS_KEY, JSON.stringify(all));
+    return all;
+  }
+
+  function rememberRoom(code, name, expiresAtMs) {
+    const all = loadKnownRooms();
+    all[normCode(code)] = { name, exp: expiresAtMs };
+    localStorage.setItem(KNOWN_ROOMS_KEY, JSON.stringify(all));
+  }
+
+  function forgetRoom(code) {
+    const all = loadKnownRooms();
+    delete all[normCode(code)];
+    localStorage.setItem(KNOWN_ROOMS_KEY, JSON.stringify(all));
   }
 
   // ---- Room countdown (chat header) ----
@@ -573,11 +620,16 @@
   }
 
   async function lobbyFetch(base, path, body, headers, method) {
+    const apiKey = lobbyApiKey();
     let res;
     try {
       res = await fetch(base.replace(/\/+$/, '') + path, {
         method: method || (body === undefined ? 'GET' : 'POST'),
-        headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
+        headers: Object.assign(
+          { 'Content-Type': 'application/json' },
+          apiKey ? { 'X-Api-Key': apiKey } : {},
+          headers || {}
+        ),
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
@@ -585,9 +637,11 @@
     }
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(
+      const err = new Error(
         typeof payload.detail === 'string' ? payload.detail : 'Lobby error (HTTP ' + res.status + ')'
       );
+      err.status = res.status;
+      throw err;
     }
     return payload;
   }
@@ -608,6 +662,10 @@
       // Keeping the host key marks us as this room's creator: it unlocks
       // the Extend control in the chat header.
       saveHostKey(room.join_code, room.host_key);
+      rememberRoom(room.join_code, room.name, Date.parse(room.expires_at));
+      // If the switch modal is open (creating while connected), surface the
+      // new room in its quick-pick list right away.
+      renderSwitchRoomList();
       joinCodeInputEl.value = room.join_code;
       report(
         'Room created — share code ' + room.join_code +
@@ -673,6 +731,7 @@
       return;
     }
     const join = await joinPrivateRoom(lobbyUrl(), code, report);
+    rememberRoom(code, join.name, Date.parse(join.expires_at));
     resetConnectionState();
     roomMeta = {
       code: normCode(code),
@@ -738,14 +797,79 @@
     switchRoomInfoEl.classList.toggle('hidden', !text);
   }
 
+  function fmtCode(code) {
+    const c = normCode(code);
+    return c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : code;
+  }
+
+  // The modal's quick-pick list: the shared server plus every room this
+  // client knows about. loadKnownRooms prunes expired entries, so a room
+  // that has lapsed disappears on the next redraw.
+  function renderSwitchRoomList() {
+    const known = loadKnownRooms();
+    switchRoomListEl.innerHTML = '';
+    const current = roomMeta ? roomMeta.code : null;
+
+    const addItem = (label, sub, isCurrent, pick) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'switch-room-item' + (isCurrent ? ' current' : '');
+      const nameEl = document.createElement('span');
+      nameEl.className = 'room-item-name';
+      nameEl.textContent = label;
+      const subEl = document.createElement('span');
+      subEl.className = 'room-item-sub';
+      subEl.textContent = isCurrent ? 'Current' : sub;
+      btn.append(nameEl, subEl);
+      if (isCurrent) btn.disabled = true;
+      else btn.addEventListener('click', pick);
+      switchRoomListEl.appendChild(btn);
+    };
+
+    addItem('Shared server', 'Main room', current === null, () => switchTo('direct'));
+    for (const code of Object.keys(known).sort((a, b) => known[a].exp - known[b].exp)) {
+      const room = known[code];
+      addItem(
+        room.name,
+        fmtCode(code) + ' · ' + fmtRemaining(room.exp - Date.now()),
+        code === current,
+        () => switchTo('room', code)
+      );
+    }
+  }
+
+  async function switchTo(kind, code) {
+    if (!identity || !socket) return;
+    setSwitchRoomInfo(kind === 'direct' ? 'Connecting…' : 'Looking up room…');
+    try {
+      if (kind === 'direct') await beginConnection('direct');
+      else await beginConnection('room', code, setSwitchRoomInfo);
+      closeSwitchRoomModal();
+    } catch (err) {
+      // The lobby says this room no longer exists — drop it from the list.
+      if (err.status === 404 || err.status === 410) {
+        forgetRoom(code);
+        renderSwitchRoomList();
+      }
+      setSwitchRoomInfo(err.message);
+    }
+  }
+
+  let switchListInterval = null;
+
   function openSwitchRoomModal() {
     setSwitchMode('direct');
     switchJoinCodeInput.value = '';
     setSwitchRoomInfo('');
+    renderSwitchRoomList();
+    // Keeps the countdowns live and drops rooms the moment they expire.
+    switchListInterval = setInterval(renderSwitchRoomList, 10000);
     switchRoomModal.classList.remove('hidden');
   }
 
   function closeSwitchRoomModal() {
+    clearInterval(switchListInterval);
+    switchListInterval = null;
     switchRoomModal.classList.add('hidden');
   }
 
@@ -1230,6 +1354,7 @@
       // The relay also broadcasts room_extended to everyone (us included);
       // updating here just makes the countdown react instantly.
       roomMeta.expiresAt = Date.parse(res.expires_at);
+      rememberRoom(roomMeta.code, roomMeta.name, roomMeta.expiresAt);
       updateRoomTimer();
     } catch (err) {
       addMessage({ system: true, warning: true, text: 'Could not extend the room: ' + err.message });
@@ -1258,6 +1383,7 @@
       );
       // The relay broadcasts room_closed and drops everyone (us included);
       // no local teardown needed beyond the usual disconnect path.
+      forgetRoom(roomMeta.code);
       addMessage({ system: true, text: 'You ended the room.' });
     } catch (err) {
       addMessage({ system: true, warning: true, text: 'Could not end the room: ' + err.message });

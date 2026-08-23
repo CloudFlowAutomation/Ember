@@ -76,6 +76,11 @@
         <input id="lobby-url-setting" autocomplete="off" placeholder="http://localhost:8100" />
         <p class="settings-hint">Where private rooms are created and joined.
         Leave blank to use the default. Non-local URLs must be HTTPS.</p>
+        <label for="lobby-api-key-setting">Rooms API key</label>
+        <input id="lobby-api-key-setting" type="password" autocomplete="off" placeholder="Not set" />
+        <p class="settings-hint">Sent with every Rooms API request. Get it from
+        whoever deployed the lobby (<code>terraform output -raw lobby_api_key</code>).
+        Leave blank if the lobby does not require one.</p>
       </div>
     </div>
   </div>
@@ -87,6 +92,7 @@
         <h2 id="switch-room-title">Switch room</h2>
         <button type="button" id="switch-room-close" class="modal-close" title="Close">✕</button>
       </div>
+      <div id="switch-room-list" class="switch-room-list"></div>
       <form id="switch-room-form">
         <div class="mode-toggle" role="tablist">
           <button type="button" id="switch-mode-direct" class="mode-btn active">Shared server</button>
