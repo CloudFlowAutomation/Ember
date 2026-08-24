@@ -1,4 +1,4 @@
-/* CommSecure renderer: connection lifecycle, roster, encrypted messaging.
+/* Ember renderer: connection lifecycle, roster, encrypted messaging.
    Session/encryption keys live only in this renderer's memory and are
    destroyed on disconnect. The persistent Ed25519 identity key (loaded via
    the preload bridge) signs each ephemeral session key so peers can detect
@@ -6,8 +6,8 @@
 (function () {
   'use strict';
 
-  const csc = window.CommSecureCrypto;
-  const PINS_KEY = 'commsecure-identity-pins';
+  const csc = window.EmberCrypto;
+  const PINS_KEY = 'ember-identity-pins';
 
   // Plaintexts starting with this control byte carry a JSON envelope
   // ({t:'text'|'image'|'file'|'delete'}, optionally {dm:true}); anything
@@ -36,10 +36,14 @@
   const serverUrlSetting = document.getElementById('server-url-setting');
   const lobbyUrlSetting = document.getElementById('lobby-url-setting');
   const lobbyApiKeySetting = document.getElementById('lobby-api-key-setting');
+  const iceServerSetting = document.getElementById('ice-server-setting');
+  const iceUsernameSetting = document.getElementById('ice-username-setting');
+  const iceCredentialSetting = document.getElementById('ice-credential-setting');
   const modeDirectBtn = document.getElementById('mode-direct');
   const modeRoomBtn = document.getElementById('mode-room');
   const roomFields = document.getElementById('room-fields');
   const joinCodeInput = document.getElementById('join-code');
+  const roomNameInput = document.getElementById('room-name');
   const roomDurationInput = document.getElementById('room-duration');
   const roomAllowExtendInput = document.getElementById('room-allow-extend');
   const createRoomBtn = document.getElementById('create-room-btn');
@@ -54,6 +58,7 @@
   const switchModeRoomBtn = document.getElementById('switch-mode-room');
   const switchRoomFieldsEl = document.getElementById('switch-room-fields');
   const switchJoinCodeInput = document.getElementById('switch-join-code');
+  const switchRoomNameInput = document.getElementById('switch-room-name');
   const switchRoomDurationInput = document.getElementById('switch-room-duration');
   const switchRoomAllowExtendInput = document.getElementById('switch-room-allow-extend');
   const switchCreateRoomBtn = document.getElementById('switch-create-room-btn');
@@ -77,6 +82,17 @@
   const dmIndicator = document.getElementById('dm-indicator');
   const dmNameEl = document.getElementById('dm-name');
   const dmClearBtn = document.getElementById('dm-clear');
+  const incomingCallBanner = document.getElementById('incoming-call-banner');
+  const incomingCallNameEl = document.getElementById('incoming-call-name');
+  const incomingCallAcceptBtn = document.getElementById('incoming-call-accept');
+  const incomingCallDeclineBtn = document.getElementById('incoming-call-decline');
+  const callOverlay = document.getElementById('call-overlay');
+  const callRemoteVideo = document.getElementById('call-remote-video');
+  const callLocalVideo = document.getElementById('call-local-video');
+  const callStatusEl = document.getElementById('call-status');
+  const callToggleMicBtn = document.getElementById('call-toggle-mic');
+  const callToggleCameraBtn = document.getElementById('call-toggle-camera');
+  const callHangupBtn = document.getElementById('call-hangup');
 
   let socket = null;
   let session = null;   // ephemeral X25519 + ML-KEM-768 keys for this connection
@@ -312,6 +328,21 @@
             ? 'Click to go back to messaging everyone'
             : 'Click to message ' + peer.username + ' privately';
         li.addEventListener('click', () => setDmTarget(sid === dmTarget ? null : sid));
+
+        const actions = document.createElement('div');
+        actions.className = 'peer-actions';
+        const callBtn = document.createElement('button');
+        callBtn.type = 'button';
+        callBtn.className = 'roster-call-btn';
+        callBtn.textContent = '📞 Call';
+        callBtn.disabled = !!activeCall || !!pendingIncomingCall;
+        callBtn.title = 'Start an encrypted call with ' + peer.username;
+        callBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); // don't also toggle the DM target
+          startCall(sid);
+        });
+        actions.appendChild(callBtn);
+        li.appendChild(actions);
       }
       rosterEl.appendChild(li);
     }
@@ -385,6 +416,13 @@
       if (!seen.has(sid)) {
         peers.delete(sid);
         if (sid === dmTarget) setDmTarget(null);
+        if (pendingIncomingCall && pendingIncomingCall.sid === sid) {
+          pendingIncomingCall = null;
+          incomingCallBanner.classList.add('hidden');
+        }
+        if (activeCall && activeCall.peerSid === sid) {
+          endCall({ notifyPeer: false, message: peer.username + ' left the room — call ended.' });
+        }
         addMessage({ system: true, text: `${peer.username} left the room` });
       }
     }
@@ -396,6 +434,7 @@
   // and by an in-place room switch, which immediately opens a new
   // connection afterwards instead of returning to the connect screen.
   function resetConnectionState() {
+    endCallForConnectionReset();
     if (socket) {
       socket.removeAllListeners();
       socket.disconnect();
@@ -429,7 +468,7 @@
   // control plane that provisions each private room's MicroVM.
   const DEFAULT_SERVER_URL = 'http://localhost:8000';
   const DEFAULT_LOBBY_URL = 'http://localhost:8100';
-  const SETTINGS_KEY = 'commsecure-settings';
+  const SETTINGS_KEY = 'ember-settings';
 
   function loadSettings() {
     try {
@@ -494,10 +533,39 @@
     saveSettings({ lobbyApiKey: lobbyApiKeySetting.value.trim() });
   });
 
+  iceServerSetting.value = loadSettings().iceServer || '';
+  iceServerSetting.addEventListener('change', () => {
+    saveSettings({ iceServer: iceServerSetting.value.trim() });
+  });
+
+  iceUsernameSetting.value = loadSettings().iceUsername || '';
+  iceUsernameSetting.addEventListener('change', () => {
+    saveSettings({ iceUsername: iceUsernameSetting.value.trim() });
+  });
+
+  iceCredentialSetting.value = loadSettings().iceCredential || '';
+  iceCredentialSetting.addEventListener('change', () => {
+    saveSettings({ iceCredential: iceCredentialSetting.value.trim() });
+  });
+
+  // Builds the RTCPeerConnection iceServers list from settings. Blank
+  // config means host-only candidates — calls still connect on the same
+  // LAN/simple NAT, just without help crossing a stricter one.
+  function iceServers() {
+    const url = (loadSettings().iceServer || '').trim();
+    if (!url) return [];
+    const entry = { urls: url };
+    const username = (loadSettings().iceUsername || '').trim();
+    const credential = (loadSettings().iceCredential || '').trim();
+    if (username) entry.username = username;
+    if (credential) entry.credential = credential;
+    return [entry];
+  }
+
   // ---- Host keys (persisted so the creator can still extend after an
   // app restart). Entries are pruned at the 8 h platform lifetime cap. ----
 
-  const HOSTKEYS_KEY = 'commsecure-host-keys';
+  const HOSTKEYS_KEY = 'ember-host-keys';
 
   function normCode(code) {
     return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -529,7 +597,7 @@
   // ---- Known rooms (persisted so the switch screen lists every room this
   // client has created or joined; entries vanish when the room expires). ----
 
-  const KNOWN_ROOMS_KEY = 'commsecure-known-rooms';
+  const KNOWN_ROOMS_KEY = 'ember-known-rooms';
 
   function loadKnownRooms() {
     let all;
@@ -648,16 +716,18 @@
 
   // Shared by both the initial connect form and the switch-room modal, so
   // creating a room works identically from either place.
-  async function createRoom({ durationInput, allowExtendInput, joinCodeInputEl, report, button }) {
+  async function createRoom({ durationInput, allowExtendInput, nameInput, joinCodeInputEl, report, button }) {
     const minutes = parseInt(durationInput.value, 10);
     if (!minutes) return;
     button.disabled = true;
     report('Creating room…');
     try {
       const allowExtend = allowExtendInput.checked;
+      const name = nameInput.value.trim();
       const room = await lobbyFetch(lobbyUrl(), '/rooms', {
         duration_minutes: minutes,
         allow_extend: allowExtend,
+        name: name || undefined,
       });
       // Keeping the host key marks us as this room's creator: it unlocks
       // the Extend control in the chat header.
@@ -685,6 +755,7 @@
   createRoomBtn.addEventListener('click', () => createRoom({
     durationInput: roomDurationInput,
     allowExtendInput: roomAllowExtendInput,
+    nameInput: roomNameInput,
     joinCodeInputEl: joinCodeInput,
     report: setRoomInfo,
     button: createRoomBtn,
@@ -693,6 +764,7 @@
   switchCreateRoomBtn.addEventListener('click', () => createRoom({
     durationInput: switchRoomDurationInput,
     allowExtendInput: switchRoomAllowExtendInput,
+    nameInput: switchRoomNameInput,
     joinCodeInputEl: switchJoinCodeInput,
     report: setSwitchRoomInfo,
     button: switchCreateRoomBtn,
@@ -932,6 +1004,10 @@
   function openSocket(url, extraOpts) {
     socket = io(url, Object.assign({ transports: ['websocket'], reconnection: false }, extraOpts));
 
+    // Set by room_closed just before the relay drops everyone, so the
+    // disconnect handler can tell "the room ended" from a plain drop.
+    let roomClosedReason = null;
+
     // Roster handling and decryption are async (ML-KEM encap/decap), but
     // the ratchet depends on processing a sender's messages in arrival
     // order — so every inbound event runs through one serial queue.
@@ -955,7 +1031,7 @@
         });
         selfNameEl.textContent = username + ' (you)';
         selfFingerprintEl.textContent = csc.fingerprint(csc.publicKeyB64(identity));
-        chatTitleEl.textContent = roomMeta ? roomMeta.name : 'Community room';
+        chatTitleEl.textContent = roomMeta ? roomMeta.name : 'Burn room';
         backToServerBtn.classList.toggle('hidden', !roomMeta);
         if (roomMeta) startRoomTimer();
         connectScreen.classList.add('hidden');
@@ -974,11 +1050,22 @@
     });
 
     socket.on('disconnect', () => {
-      if (session) {
-        addMessage({ system: true, text: 'Disconnected from server.' });
-        teardown();
-        showError('Connection lost. Your session keys were destroyed.');
+      if (!session) return;
+      // A private room dropping means the room ended (host, expiry, idle).
+      // Fall back to the shared server instead of the sign-in screen; if
+      // that connect fails, connect_error tears down to sign-in as usual.
+      if (roomMeta) {
+        const why = roomClosedReason || 'the connection dropped';
+        beginConnection('direct').catch((err) => {
+          teardown();
+          showError('The room closed and the shared server is unreachable: ' + err.message);
+        });
+        addMessage({ system: true, text: 'Left the room (' + why + ') — returning to the shared server.' });
+        return;
       }
+      addMessage({ system: true, text: 'Disconnected from server.' });
+      teardown();
+      showError('Connection lost. Your session keys were destroyed.');
     });
 
     socket.on('roster', (roster) => enqueue(() => handleRoster(roster)));
@@ -1049,6 +1136,8 @@
           // own messages.
           const el = messageIndex.get(msgKey(msg.from, envelope.id));
           if (el) tombstoneMessage(el);
+        } else if (typeof envelope.t === 'string' && envelope.t.startsWith('call-')) {
+          await handleCallEnvelope(envelope, msg.from);
         }
         return; // unknown envelope types are dropped, not shown as text
       }
@@ -1076,6 +1165,7 @@
         : kind === 'ended'
           ? 'the host ended the room'
           : 'the room reached its expiration';
+      roomClosedReason = reason;
       addMessage({ system: true, text: 'Room closed — ' + reason + '.' });
     });
   }
@@ -1395,6 +1485,245 @@
   dmClearBtn.addEventListener('click', () => setDmTarget(null));
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && dmTarget) setDmTarget(null);
+  });
+
+  // ---- Encrypted calling ----
+  // WebRTC offer/answer/ICE ride the same per-peer authenticated E2E
+  // channel as DMs (sendEncrypted with onlySid) instead of a separate
+  // signaling path, so call setup gets the same identity-signed protection
+  // against a MITM relay as everything else. Media itself is additionally
+  // protected by WebRTC's mandatory DTLS-SRTP. One call at a time.
+
+  let activeCall = null; // { peerSid, peerName, pc, localStream, direction, established, micMuted, cameraOff }
+  let pendingIncomingCall = null; // { sid, name, offer, candidates: [] } — ringing, not yet accepted
+
+  function sendCallEnvelope(sid, envelope) {
+    sendEncrypted(ENVELOPE_PREFIX + JSON.stringify(envelope), sid);
+  }
+
+  function setCallStatus(text) {
+    callStatusEl.textContent = text;
+  }
+
+  function newPeerConnection() {
+    const pc = new RTCPeerConnection({ iceServers: iceServers() });
+    pc.onicecandidate = (e) => {
+      if (!e.candidate || !activeCall) return;
+      sendCallEnvelope(activeCall.peerSid, { t: 'call-ice', candidate: e.candidate.toJSON() });
+    };
+    pc.ontrack = (e) => {
+      callRemoteVideo.srcObject = e.streams[0] || null;
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') setCallStatus('');
+      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState) && activeCall && activeCall.pc === pc) {
+        endCall({ notifyPeer: false, message: 'Call disconnected.' });
+      }
+    };
+    return pc;
+  }
+
+  async function getCallMedia() {
+    return navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    });
+  }
+
+  // Congestion control starts conservative and ramps up slowly, especially
+  // over the TURN relay hop. Raise the ceiling so a good connection can
+  // actually reach 720p-ish quality instead of settling for its default cap.
+  async function raiseVideoBitrate(pc) {
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (!sender) return;
+    const params = sender.getParameters();
+    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    params.encodings[0].maxBitrate = 2500000;
+    try {
+      await sender.setParameters(params);
+    } catch (e) {
+      // Not fatal — call still works at the default bitrate cap.
+    }
+  }
+
+  function showCallOverlay() {
+    incomingCallBanner.classList.add('hidden');
+    callOverlay.classList.remove('hidden');
+  }
+
+  function hideCallOverlay() {
+    callOverlay.classList.add('hidden');
+    callRemoteVideo.srcObject = null;
+    callLocalVideo.srcObject = null;
+    callToggleMicBtn.classList.remove('muted');
+    callToggleCameraBtn.classList.remove('muted');
+  }
+
+  async function startCall(sid) {
+    const peer = peers.get(sid);
+    if (activeCall || pendingIncomingCall || !peer || !peer.state) return;
+    let localStream;
+    try {
+      localStream = await getCallMedia();
+    } catch (e) {
+      addMessage({ system: true, warning: true, text: 'Could not access camera/microphone: ' + e.message });
+      return;
+    }
+    const pc = newPeerConnection();
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    await raiseVideoBitrate(pc);
+    activeCall = {
+      peerSid: sid,
+      peerName: peer.username,
+      pc,
+      localStream,
+      direction: 'outgoing',
+      established: false,
+      micMuted: false,
+      cameraOff: false,
+    };
+    callLocalVideo.srcObject = localStream;
+    setCallStatus('Calling ' + peer.username + '…');
+    showCallOverlay();
+    renderRoster();
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sendCallEnvelope(sid, { t: 'call-offer', sdp: offer.sdp });
+  }
+
+  async function acceptIncomingCall() {
+    if (!pendingIncomingCall) return;
+    const { sid, name, offer, candidates } = pendingIncomingCall;
+    pendingIncomingCall = null;
+    let localStream;
+    try {
+      localStream = await getCallMedia();
+    } catch (e) {
+      addMessage({ system: true, warning: true, text: 'Could not access camera/microphone: ' + e.message });
+      sendCallEnvelope(sid, { t: 'call-end' });
+      incomingCallBanner.classList.add('hidden');
+      return;
+    }
+    const pc = newPeerConnection();
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    await raiseVideoBitrate(pc);
+    activeCall = {
+      peerSid: sid,
+      peerName: name,
+      pc,
+      localStream,
+      direction: 'incoming',
+      established: true,
+      micMuted: false,
+      cameraOff: false,
+    };
+    callLocalVideo.srcObject = localStream;
+    setCallStatus('Connecting…');
+    showCallOverlay();
+    renderRoster();
+    await pc.setRemoteDescription({ type: 'offer', sdp: offer });
+    for (const candidate of candidates) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (e) {
+        // A stale/invalid candidate here just means one fewer ICE path.
+      }
+    }
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sendCallEnvelope(sid, { t: 'call-answer', sdp: answer.sdp });
+  }
+
+  function declineIncomingCall() {
+    if (!pendingIncomingCall) return;
+    sendCallEnvelope(pendingIncomingCall.sid, { t: 'call-end' });
+    pendingIncomingCall = null;
+    incomingCallBanner.classList.add('hidden');
+    renderRoster();
+  }
+
+  function endCall({ notifyPeer = true, message = 'Call ended.' } = {}) {
+    if (!activeCall) return;
+    const { peerSid, pc, localStream } = activeCall;
+    if (notifyPeer) sendCallEnvelope(peerSid, { t: 'call-end' });
+    pc.onicecandidate = null;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    pc.close();
+    localStream.getTracks().forEach((track) => track.stop());
+    activeCall = null;
+    hideCallOverlay();
+    renderRoster();
+    if (message) addMessage({ system: true, text: message });
+  }
+
+  // Called when the current connection is torn down (disconnect, room
+  // switch) — nothing on the other end will be listening for signaling
+  // envelopes afterward, so there's no peer left to notify.
+  function endCallForConnectionReset() {
+    if (pendingIncomingCall) {
+      pendingIncomingCall = null;
+      incomingCallBanner.classList.add('hidden');
+    }
+    if (activeCall) endCall({ notifyPeer: false, message: null });
+  }
+
+  async function handleCallEnvelope(envelope, from) {
+    const peer = peers.get(from);
+    if (envelope.t === 'call-offer' && typeof envelope.sdp === 'string') {
+      if (activeCall || pendingIncomingCall || !peer) {
+        sendCallEnvelope(from, { t: 'call-busy' });
+        return;
+      }
+      pendingIncomingCall = { sid: from, name: peer.username, offer: envelope.sdp, candidates: [] };
+      incomingCallNameEl.textContent = peer.username;
+      incomingCallBanner.classList.remove('hidden');
+      renderRoster();
+    } else if (envelope.t === 'call-answer' && typeof envelope.sdp === 'string') {
+      if (!activeCall || activeCall.peerSid !== from || activeCall.direction !== 'outgoing') return;
+      activeCall.established = true;
+      await activeCall.pc.setRemoteDescription({ type: 'answer', sdp: envelope.sdp });
+    } else if (envelope.t === 'call-ice' && envelope.candidate) {
+      if (activeCall && activeCall.peerSid === from) {
+        try {
+          await activeCall.pc.addIceCandidate(envelope.candidate);
+        } catch (e) {
+          // Ignore — a dropped candidate just means one fewer ICE path.
+        }
+      } else if (pendingIncomingCall && pendingIncomingCall.sid === from) {
+        pendingIncomingCall.candidates.push(envelope.candidate);
+      }
+    } else if (envelope.t === 'call-end') {
+      if (pendingIncomingCall && pendingIncomingCall.sid === from) {
+        pendingIncomingCall = null;
+        incomingCallBanner.classList.add('hidden');
+        renderRoster();
+      } else if (activeCall && activeCall.peerSid === from) {
+        endCall({ notifyPeer: false, message: (peer ? peer.username : 'The other person') + ' ended the call.' });
+      }
+    } else if (envelope.t === 'call-busy') {
+      if (activeCall && activeCall.peerSid === from && !activeCall.established) {
+        endCall({ notifyPeer: false, message: (peer ? peer.username : 'They') + ' are on another call.' });
+      }
+    }
+  }
+
+  callHangupBtn.addEventListener('click', () => endCall());
+  incomingCallAcceptBtn.addEventListener('click', acceptIncomingCall);
+  incomingCallDeclineBtn.addEventListener('click', declineIncomingCall);
+
+  callToggleMicBtn.addEventListener('click', () => {
+    if (!activeCall) return;
+    activeCall.micMuted = !activeCall.micMuted;
+    activeCall.localStream.getAudioTracks().forEach((t) => (t.enabled = !activeCall.micMuted));
+    callToggleMicBtn.classList.toggle('muted', activeCall.micMuted);
+  });
+
+  callToggleCameraBtn.addEventListener('click', () => {
+    if (!activeCall) return;
+    activeCall.cameraOff = !activeCall.cameraOff;
+    activeCall.localStream.getVideoTracks().forEach((t) => (t.enabled = !activeCall.cameraOff));
+    callToggleCameraBtn.classList.toggle('muted', activeCall.cameraOff);
   });
 
   disconnectBtn.addEventListener('click', teardown);

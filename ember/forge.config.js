@@ -44,7 +44,7 @@ if (
 
 module.exports = {
   packagerConfig: {
-    appBundleId: 'io.darkmatterit.commsecure',
+    appBundleId: 'io.darkmatterit.ember',
     icon: path.resolve(__dirname, 'assets', 'icon'),
     ...osxSign,
     ...osxNotarize,
@@ -77,8 +77,8 @@ module.exports = {
       name: '@electron-forge/publisher-github',
       config: {
         repository: {
-          owner: 'CloudFlowAutomation',
-          name: 'commsecure'
+          owner: 'CivicPort',
+          name: 'Ember'
         },
         prerelease: true,
         draft: false

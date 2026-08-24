@@ -1,4 +1,4 @@
-// CommSecure PFS crypto core — hybrid post-quantum edition.
+// Ember PFS crypto core — hybrid post-quantum edition.
 //
 // Forward secrecy comes from two layers:
 //  1. Session keys are ephemeral and generated per connection — an X25519
@@ -29,7 +29,7 @@
       require('mlkem')
     );
   } else {
-    root.CommSecureCrypto = factory(root.nacl, root.nacl.util, root.MlKemBundle);
+    root.EmberCrypto = factory(root.nacl, root.nacl.util, root.MlKemBundle);
   }
 })(typeof self !== 'undefined' ? self : this, function (nacl, util, mlkem) {
   'use strict';
@@ -44,7 +44,7 @@
   // Domain-separation prefix so identity signatures can never be replayed
   // in another protocol or over a different message type. v2 covers both
   // session public keys, so a relay can swap neither.
-  const SESSION_SIGN_CONTEXT = util.decodeUTF8('CommSecure-v2:session-keys:');
+  const SESSION_SIGN_CONTEXT = util.decodeUTF8('Ember-v2:session-keys:');
 
   const kem = new mlkem.MlKem768();
 

@@ -53,7 +53,9 @@ provider "aws" {
 
 # Shared API key the Electron app must send as X-Api-Key on every lobby
 # request. Stored in SSM so it never lands in the function's plain-text
-# environment; the lambda reads it once per sandbox.
+# environment; the lambda reads it once per sandbox. Read it out with:
+#   terraform output -raw lobby_api_key
+# Rotate by tainting: terraform apply -replace=random_password.lobby_api_key
 resource "random_password" "lobby_api_key" {
   length  = 40
   special = false
@@ -159,6 +161,13 @@ resource "aws_iam_role_policy" "lobby" {
         Resource = aws_dynamodb_table.rooms.arn
       },
       {
+        # Decryption uses the AWS-managed aws/ssm key, which needs no
+        # explicit kms:Decrypt grant.
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = aws_ssm_parameter.lobby_api_key.arn
+      },
+      {
         # MicroVM actions live in the lambda: namespace (see README).
         Effect = "Allow"
         Action = [
@@ -213,10 +222,10 @@ resource "aws_lambda_function" "lobby" {
   }
 }
 
-# Public URL; the handler itself enforces the shared X-Api-Key, and rooms
-# are further guarded by unguessable join codes + short lifetimes. CORS
-# (incl. OPTIONS preflight from the app's file:// origin) is answered by
-# the handler too.
+# Public URL; the handler itself checks X-Api-Key against the SSM
+# parameter, and rooms are further guarded by unguessable join codes +
+# short lifetimes. CORS (incl. OPTIONS preflight from the app's file://
+# origin) is answered by the handler too.
 resource "aws_lambda_function_url" "lobby" {
   function_name      = aws_lambda_function.lobby.function_name
   authorization_type = "NONE"

@@ -1,6 +1,6 @@
-# ember desktop app
+# Ember desktop app
 
-Electron client for ember. All cryptography runs in the renderer; see
+Electron client for Ember. All cryptography runs in the renderer; see
 the repo root `README.md` for the E2E/forward-secrecy design and the shared
 relay. This file covers running the app and deploying the **temporary
 private-room infrastructure** it connects to.
@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-## Distributing builds ("ember is damaged" fix)
+## Distributing builds ("Ember is damaged" fix)
 
 macOS Gatekeeper reports downloaded copies of the app as *"damaged and
 can't be opened"* when the build is not signed with a Developer ID
@@ -43,7 +43,7 @@ This requires an Apple Developer Program membership. Until then, people
 who download an unsigned build can clear the quarantine flag manually:
 
 ```bash
-xattr -cr /path/to/ember.app
+xattr -cr /path/to/Ember.app
 ```
 
 ## Deploy temporary room infrastructure

@@ -1,4 +1,4 @@
-"""CommSecure room lobby — control plane for private rooms.
+"""Ember room lobby — control plane for private rooms.
 
 Creates one AWS Lambda MicroVM per private room from a pre-built relay
 image (scripts/deploy_room_image.sh) and maps short join codes to the
@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="CommSecure Room Lobby", lifespan=lifespan)
+app = FastAPI(title="Ember Room Lobby", lifespan=lifespan)
 
 # The Electron renderer calls us from a file:// origin.
 app.add_middleware(

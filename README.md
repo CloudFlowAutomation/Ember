@@ -1,4 +1,4 @@
-# Ember - Secure Chat the fizzles away. End-to-end encrypted group chat with perfect forward secrecy.
+# Ember – Community Secure Chat
 
 End-to-end encrypted group chat with **perfect forward secrecy (PFS)** and
 **post-quantum hybrid key agreement** (X25519 + ML-KEM-768, in the style of
@@ -10,7 +10,7 @@ Two parts:
   maintains a roster of `{sid, public key, username}` and forwards opaque
   ciphertext between clients. It stores no messages and never sees plaintext
   or private keys.
-- **ember desktop app** (`ember/`) — an Electron client themed to
+- **Ember desktop app** (`ember/`) — an Electron client themed to
   match TownCenter. All cryptography runs in the client.
 
 ## How forward secrecy works
@@ -71,7 +71,7 @@ fit; the Socket.IO server buffer is raised to match in `app/main.py`.)
 
 ## Private rooms on AWS Lambda MicroVMs
 
-Beyond the shared relay, ember can run **one isolated relay per
+Beyond the shared relay, Ember can run **one isolated relay per
 private room**, each in its own [Lambda MicroVM](https://docs.aws.amazon.com/lambda/latest/dg/lambda-microvms-guide.html)
 (a Firecracker VM with a dedicated HTTPS endpoint). The **lobby**
 (`app/lobby.py`) is the control plane:

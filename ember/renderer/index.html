@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self'; connect-src http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* https: wss:; img-src 'self' data:;" />
-  <title>CommSecure – Community Secure Chat</title>
+        content="default-src 'self'; style-src 'self'; connect-src http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* https: wss: stun: turn: turns:; img-src 'self' data:; media-src 'self' blob:;" />
+  <title>Ember – Secure Chat</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,20 +14,12 @@
       <div class="brand">
         <div class="brand-mark">
           <svg viewBox="0 0 100 100" aria-hidden="true">
-            <g fill="none" stroke="currentColor" stroke-linecap="round">
-              <circle cx="50" cy="50" r="43" stroke-width="7"/>
-              <circle cx="50" cy="50" r="25" stroke-width="6"/>
-              <line x1="50" y1="25" x2="50" y2="75" stroke-width="6"/>
-              <line x1="25" y1="50" x2="75" y2="50" stroke-width="6"/>
-              <line x1="32.3" y1="32.3" x2="67.7" y2="67.7" stroke-width="6"/>
-              <line x1="67.7" y1="32.3" x2="32.3" y2="67.7" stroke-width="6"/>
-            </g>
-            <circle cx="50" cy="50" r="11" fill="currentColor"/>
-            <circle cx="50" cy="50" r="5" fill="var(--primary)"/>
+            <path fill="currentColor" d="M50 6C34 26 24 42 24 58c0 20 12 36 26 36s26-16 26-36c0-9-4-18-11-26 1 9-3 15-8 18 4-13-1-24-1-24 5 7 3 14-2 19C43 33 50 20 50 6z"/>
+            <circle cx="50" cy="62" r="10" fill="var(--primary)"/>
           </svg>
         </div>
-        <h1>CommSecure</h1>
-        <p class="subtitle">Community Secure Chat</p>
+        <h1>Ember</h1>
+        <p class="subtitle">Secure Chat</p>
       </div>
       <form id="connect-form">
         <label for="username">Username</label>
@@ -39,6 +31,8 @@
         <div id="room-fields" class="hidden">
           <label for="join-code">Join code</label>
           <input id="join-code" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" />
+          <label for="room-name">Room name</label>
+          <input id="room-name" autocomplete="off" maxlength="64" placeholder="Private room" />
           <div class="room-create-row">
             <input id="room-duration" type="number" min="5" max="480" value="60" title="Room duration in minutes" />
             <span class="room-create-unit">min</span>
@@ -77,11 +71,49 @@
         <p class="settings-hint">Where private rooms are created and joined.
         Leave blank to use the default. Non-local URLs must be HTTPS.</p>
         <label for="lobby-api-key-setting">Rooms API key</label>
-        <input id="lobby-api-key-setting" type="password" autocomplete="off" placeholder="Not set" />
+        <input id="lobby-api-key-setting" type="password" autocomplete="off" placeholder="Leave blank if the lobby has no key" />
         <p class="settings-hint">Sent with every Rooms API request. Get it from
         whoever deployed the lobby (<code>terraform output -raw lobby_api_key</code>).
         Leave blank if the lobby does not require one.</p>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Calls — STUN/TURN</div>
+          <label for="ice-server-setting">Call server URL</label>
+          <input id="ice-server-setting" autocomplete="off" placeholder="turn:host:3478" />
+          <p class="settings-hint">Used only to negotiate a call's connection
+          path — never sees call content. Leave blank and calls still work
+          between devices on the same network.</p>
+          <label for="ice-username-setting">Call server username</label>
+          <input id="ice-username-setting" autocomplete="off" placeholder="Leave blank if not required" />
+          <label for="ice-credential-setting">Call server credential</label>
+          <input id="ice-credential-setting" type="password" autocomplete="off" placeholder="Leave blank if not required" />
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Incoming call banner -->
+  <div id="incoming-call-banner" class="incoming-call-banner hidden">
+    <div class="incoming-call-text">
+      <strong id="incoming-call-name"></strong> is calling…
+    </div>
+    <div class="incoming-call-actions">
+      <button type="button" id="incoming-call-decline" class="btn-outline">Decline</button>
+      <button type="button" id="incoming-call-accept" class="btn-primary">Accept</button>
+    </div>
+  </div>
+
+  <!-- Active call overlay -->
+  <div id="call-overlay" class="call-overlay hidden">
+    <div class="call-video-wrap">
+      <video id="call-remote-video" class="call-remote-video" autoplay playsinline></video>
+      <video id="call-local-video" class="call-local-video" autoplay playsinline muted></video>
+      <div id="call-status" class="call-status"></div>
+    </div>
+    <div class="call-controls">
+      <button type="button" id="call-toggle-mic" class="btn-outline" title="Mute microphone">🎤</button>
+      <button type="button" id="call-toggle-camera" class="btn-outline" title="Turn off camera">🎥</button>
+      <button type="button" id="call-hangup" class="btn-end-room" title="End call">📞 Hang up</button>
     </div>
   </div>
 
@@ -101,6 +133,8 @@
         <div id="switch-room-fields" class="hidden">
           <label for="switch-join-code">Join code</label>
           <input id="switch-join-code" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" />
+          <label for="switch-room-name">Room name</label>
+          <input id="switch-room-name" autocomplete="off" maxlength="64" placeholder="Private room" />
           <div class="room-create-row">
             <input id="switch-room-duration" type="number" min="5" max="480" value="60" title="Room duration in minutes" />
             <span class="room-create-unit">min</span>
@@ -121,21 +155,13 @@
       <div class="sidebar-header">
         <span class="brand-mark small">
           <svg viewBox="0 0 100 100" aria-hidden="true">
-            <g fill="none" stroke="currentColor" stroke-linecap="round">
-              <circle cx="50" cy="50" r="43" stroke-width="7"/>
-              <circle cx="50" cy="50" r="25" stroke-width="6"/>
-              <line x1="50" y1="25" x2="50" y2="75" stroke-width="6"/>
-              <line x1="25" y1="50" x2="75" y2="50" stroke-width="6"/>
-              <line x1="32.3" y1="32.3" x2="67.7" y2="67.7" stroke-width="6"/>
-              <line x1="67.7" y1="32.3" x2="32.3" y2="67.7" stroke-width="6"/>
-            </g>
-            <circle cx="50" cy="50" r="11" fill="currentColor"/>
-            <circle cx="50" cy="50" r="5" fill="var(--primary)"/>
+            <path fill="currentColor" d="M50 6C34 26 24 42 24 58c0 20 12 36 26 36s26-16 26-36c0-9-4-18-11-26 1 9-3 15-8 18 4-13-1-24-1-24 5 7 3 14-2 19C43 33 50 20 50 6z"/>
+            <circle cx="50" cy="62" r="10" fill="var(--primary)"/>
           </svg>
         </span>
         <div>
-          <div class="sidebar-title">CommSecure</div>
-          <div class="sidebar-subtitle">Community Secure Chat</div>
+          <div class="sidebar-title">Ember</div>
+          <div class="sidebar-subtitle">Secure Chat</div>
         </div>
       </div>
       <div class="self-card">
@@ -152,7 +178,7 @@
     <main class="main">
       <header class="chat-header">
         <div class="chat-header-left">
-          <div id="chat-title" class="chat-title">Community room</div>
+          <div id="chat-title" class="chat-title">Burn room</div>
           <div id="room-timer" class="room-timer hidden">
             <span id="room-timer-text"></span>
             <button type="button" id="extend-btn" class="btn-extend hidden">+ Extend</button>
